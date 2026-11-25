@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#123c32">
+  <title>Mahjong Table</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="game.js" defer></script>
+</head>
+<body>
+  <main class="table-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">YOU VS. THREE BOTS</p>
+        <h1>Mahjong Table</h1>
+      </div>
+      <div class="game-controls">
+        <label class="variant-control" for="variant-select">
+          <span>Ruleset</span>
+          <select id="variant-select">
+            <option value="chinese-classical">Chinese Classical</option>
+            <option value="hong-kong">Hong Kong Old Style</option>
+            <option value="japanese-riichi">Japanese Riichi (core)</option>
+            <option value="taiwanese-16">Taiwanese 16-tile</option>
+            <option value="american">American (simplified, no card)</option>
+          </select>
+        </label>
+        <button class="new-game-button" id="new-game" type="button">New hand</button>
+      </div>
+    </header>
+    <p class="variant-note" id="variant-note" aria-live="polite"></p>
+
+    <section class="game-layout" aria-label="Mahjong game">
+      <aside class="symbol-reference" id="symbol-reference" aria-labelledby="symbol-reference-title">
+        <h2 id="symbol-reference-title">Tile symbol guide</h2>
+        <p>Symbols used across the available rulesets.</p>
+        <table class="symbol-table" aria-label="Mahjong tile symbols and names">
+          <tbody id="symbol-table-body"></tbody>
+        </table>
+      </aside>
+
+      <aside class="pattern-reference" id="pattern-reference" aria-labelledby="pattern-reference-title">
+        <h2 id="pattern-reference-title">Example melds and pair</h2>
+        <p>A winning hand uses its ruleset’s required melds plus one pair. Green outlines mark melds; gold marks the pair.</p>
+        <table class="pattern-table" aria-label="Examples of Mahjong melds and pairs">
+          <thead>
+            <tr>
+              <th scope="col">Group</th>
+              <th scope="col">Example</th>
+              <th scope="col">Pattern</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Sequence (Chow)</th>
+              <td>
+                <div class="pattern-tiles example-meld" aria-label="3, 4, and 5 of Characters">
+                  <span class="tile characters small" aria-hidden="true">3萬</span>
+                  <span class="tile characters small" aria-hidden="true">4萬</span>
+                  <span class="tile characters small" aria-hidden="true">5萬</span>
+                </div>
+              </td>
+              <td>Three consecutive tiles in one suit.</td>
+            </tr>
+            <tr>
+              <th scope="row">Triplet (Pung)</th>
+              <td>
+                <div class="pattern-tiles example-meld" aria-label="Three 5 of Circles">
+                  <span class="tile circles small" aria-hidden="true">5筒</span>
+                  <span class="tile circles small" aria-hidden="true">5筒</span>
+                  <span class="tile circles small" aria-hidden="true">5筒</span>
+                </div>
+              </td>
+              <td>Three identical tiles.</td>
+            </tr>
+            <tr>
+              <th scope="row">Quad (Kong)</th>
+              <td>
+                <div class="pattern-tiles example-meld" aria-label="Four East winds">
+                  <span class="tile honors small" aria-hidden="true">東</span>
+                  <span class="tile honors small" aria-hidden="true">東</span>
+                  <span class="tile honors small" aria-hidden="true">東</span>
+                  <span class="tile honors small" aria-hidden="true">東</span>
+                </div>
+              </td>
+              <td>Four identical tiles; counts as one meld.</td>
+            </tr>
+            <tr>
+              <th scope="row">Pair</th>
+              <td>
+                <div class="pattern-tiles example-pair" aria-label="Two 9 of Bamboo">
+                  <span class="tile bamboo small" aria-hidden="true">9索</span>
+                  <span class="tile bamboo small" aria-hidden="true">9索</span>
+                </div>
+              </td>
+              <td>Two identical tiles.</td>
+            </tr>
+          </tbody>
+        </table>
+      </aside>
+
+      <div class="board-top-row">
+        <div class="wall-display" id="wall-display" aria-hidden="true"></div>
+        <div class="discard-pile" id="discard-pile" aria-label="Discarded tiles"></div>
+      </div>
+
+      <section class="board" aria-label="Mahjong table">
+        <div class="player player-north" id="player-2"></div>
+        <div class="player player-west" id="player-3"></div>
+        <div class="table-center">
+          <div class="lantern" aria-hidden="true">萬</div>
+          <p class="round-label" id="round-label"></p>
+          <p class="wall-count" id="wall-count"></p>
+          <p class="drawn-legend">Gold outline marks a bot's latest draw</p>
+        </div>
+        <div class="player player-east" id="player-1"></div>
+        <div class="player player-south" id="player-0"></div>
+      </section>
+
+      <section class="play-area" aria-live="polite">
+        <div class="turn-message" id="turn-message"></div>
+        <div class="turn-commentary">
+          <div class="turn-narration" id="turn-narration" role="status" aria-live="polite">Turn narration will explain each player's actions.</div>
+          <label class="voice-control" for="voice-enabled">
+            <input id="voice-enabled" type="checkbox" checked>
+            Speak turn narration
+          </label>
+        </div>
+        <div class="tutor-note" id="tutor-note" role="status" aria-live="polite"></div>
+        <div class="melds" id="melds"></div>
+        <p class="hand-help" id="hand-help">Click Draw when it is your turn to draw, then click a tile to discard. Drag tiles to arrange them; use Alt+Left/Right when a tile is focused.</p>
+        <div class="hand" id="hand" aria-label="Your tiles" aria-describedby="hand-help"></div>
+        <div class="actions" id="actions"></div>
+        <section class="game-review" id="game-review" aria-labelledby="game-review-title" hidden>
+          <h2 id="game-review-title">Game review</h2>
+          <p id="game-review-summary" aria-live="polite"></p>
+          <div class="game-review-table-wrap">
+            <table class="game-review-table">
+              <thead>
+                <tr>
+                  <th scope="col">Turn</th>
+                  <th scope="col">Your move</th>
+                  <th scope="col">Best estimate</th>
+                  <th scope="col">Your win chance</th>
+                  <th scope="col">Best win chance</th>
+                  <th scope="col">Comparison</th>
+                </tr>
+              </thead>
+              <tbody id="game-review-rows"></tbody>
+            </table>
+          </div>
+          <p class="game-review-method" id="game-review-method"></p>
+        </section>
+      </section>
+    </section>
+
+    <details class="rules">
+      <summary>How to play</summary>
+      <p>You play your own hand against three automatic opponents. Bot settings let you show or hide their concealed tiles and control spoken bot-move narration; exposed melds remain visible. The narration describes draws, discards, claims, and turns skipped by claims. While speech plays, the active player's panel and the tile being named glow. Draws animate from the wall as they are spoken, and discards move to the center when narrated. Use Speak turn narration to turn all speech off. When tutor guidance is enabled, it suggests a discard based on pairs and sequence connections; treat it as a learning aid, not a guaranteed best move. When your turn requires a draw, click Draw, then click a tile to discard; use Draw for replacement tiles after a Kong as well. Drag tiles or use Alt+Left/Right while focused to arrange your hand. Click <strong>Declare win</strong> when the hand is complete. You can also choose any eligible claim after an opponent discards. After a hand ends, select <strong>Game review</strong> to compare your discards and win declarations with approximate self-draw estimates; meld claims, passes, Riichi, and Kong choices are not scored.</p>
+      <p>Choose a ruleset above; it applies to the next hand. Chinese Classical and Hong Kong use four melds and a pair. Riichi adds a basic riichi declaration and a small set of yaku. Taiwanese uses 16 tiles and five melds. American is an explicitly simplified, card-free practice mode using four matching sets, a natural pair, and jokers; it is not an official NMJL hand card. The scoreboard adds 1 point per win and carries totals across hands (until the page is reloaded); official hand scoring, Charleston, furiten, and special hands are not implemented.</p>
+    </details>
+
+    <fieldset class="guide-controls">
+      <legend>Reference guides</legend>
+      <label>
+        <input id="show-symbol-guide" type="checkbox" aria-controls="symbol-reference" checked>
+        Tile symbol guide
+      </label>
+      <label>
+        <input id="show-pattern-examples" type="checkbox" aria-controls="pattern-reference" checked>
+        Example melds and pair
+      </label>
+    </fieldset>
+
+    <fieldset class="guide-controls">
+      <legend>Bot settings</legend>
+      <label>
+        <input id="show-bot-hands" type="checkbox" aria-controls="player-1 player-2 player-3" checked>
+        Show bot hands
+      </label>
+      <label>
+        <input id="bot-narration-enabled" type="checkbox" aria-controls="turn-narration" checked>
+        Speak bot move narration
+      </label>
+    </fieldset>
+
+    <fieldset class="guide-controls">
+      <legend>Tutor</legend>
+      <label>
+        <input id="tutor-enabled" type="checkbox" aria-controls="tutor-note hand" checked>
+        Enable tutor guidance
+      </label>
+    </fieldset>
+  </main>
+
+  <div class="privacy-screen" id="privacy-screen" hidden>
+    <div class="privacy-card">
+      <p class="eyebrow">PRIVATE HAND</p>
+      <h2 id="privacy-title">Pass the device</h2>
+      <p id="privacy-copy"></p>
+      <button id="privacy-ready" type="button">I’m ready</button>
+    </div>
+  </div>
+</body>
+</html>
