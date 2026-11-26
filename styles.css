@@ -28,6 +28,19 @@ button {
   font: inherit;
 }
 
+.phone-tools,
+.phone-discard-label,
+.layout-status:empty,
+.undo-status:empty {
+  display: none;
+}
+
+.layout-status,
+.undo-status {
+  color: #f0d99c;
+  font-size: 0.75rem;
+}
+
 .table-shell {
   width: min(1440px, 100%);
   margin: 0 auto;
@@ -154,7 +167,6 @@ h1 {
     "examples" auto
     "wall" auto
     "board" auto
-    "play-area" auto
     / minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid rgba(231, 207, 151, 0.35);
@@ -237,6 +249,80 @@ h1 {
   height: 54px;
   flex: 0 0 auto;
   font-size: 1.2rem;
+}
+
+.american-guide {
+  overflow: hidden;
+  border-radius: 6px;
+  background: #e8ebe8;
+  color: #202a26;
+}
+
+.american-guide[hidden] {
+  display: none;
+}
+
+.american-guide-row {
+  display: grid;
+  grid-template-columns: 135px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 2px solid #53655d;
+}
+
+.american-guide h3,
+.american-guide h4 {
+  margin: 0 0 3px;
+  color: #1b3028;
+}
+
+.american-guide h3 {
+  font-size: 1rem;
+}
+
+.american-guide h4 {
+  font-size: 0.85rem;
+}
+
+.american-guide p {
+  margin: 0;
+  color: #293d34;
+  font-size: 0.75rem;
+}
+
+.american-guide-suit {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 50px));
+  gap: 4px;
+}
+
+.american-guide .tile.american-guide-tile {
+  width: 100%;
+  max-width: 50px;
+  height: auto;
+  aspect-ratio: 63 / 86;
+}
+
+.american-guide-neutral {
+  padding: 8px;
+}
+
+.american-guide-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.american-guide-group-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.american-guide .american-guide-group-tiles .tile.american-guide-tile {
+  width: 39px;
 }
 
 .pattern-reference {
@@ -346,6 +432,16 @@ h1 {
   background: rgba(8, 39, 31, 0.5);
   color: #e4e6d9;
   font-size: 0.82rem;
+}
+
+.player-top { grid-area: 1 / 1 / 2 / 4; }
+.player-left { grid-area: 2 / 1; }
+.player-right { grid-area: 2 / 3; }
+.player-bottom { grid-area: 3 / 1 / 4 / 4; }
+
+#player-0-summary {
+  width: 100%;
+  text-align: center;
 }
 
 .player-header {
@@ -487,6 +583,211 @@ h1 {
   place-items: center;
 }
 
+.wall-area {
+  display: grid;
+  flex: 0 0 auto;
+  justify-items: center;
+  gap: 6px;
+}
+
+.board-top-row.american-wall-layout {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.wall-area.american-wall-area {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+}
+
+.american-wall-layout .discard-pile {
+  width: 100%;
+}
+
+.dice-results {
+  color: #e7e8d8;
+  font-size: 0.75rem;
+}
+
+.dice-results[hidden] {
+  display: none;
+}
+
+.dice-heading {
+  color: #f0d99c;
+  font-weight: 750;
+}
+
+.dice-round {
+  margin-top: 4px;
+  font-weight: 700;
+}
+
+.dice-entry {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 2px;
+}
+
+.dice-name {
+  width: 52px;
+}
+
+.die-face {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid #b7ad95;
+  border-radius: 4px;
+  background: #fffdf3;
+  color: #263d32;
+  font-weight: 800;
+}
+
+.wall-display.american-wall {
+  display: grid;
+  flex: 0 0 auto;
+  width: min(270px, 72vw);
+  height: auto;
+  aspect-ratio: 1;
+  grid-template:
+    ". west ." 16px
+    "north . south" minmax(0, 1fr)
+    ". east ." 16px
+    / 16px minmax(0, 1fr) 16px;
+  gap: 2px;
+  place-items: stretch;
+}
+
+.american-wall-side {
+  display: grid;
+  gap: 1px;
+}
+
+.wall-west,
+.wall-east {
+  grid-template-columns: repeat(19, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+.wall-north,
+.wall-south {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(19, minmax(0, 1fr));
+}
+
+.wall-north { grid-area: north; }
+.wall-west { grid-area: west; }
+.wall-south { grid-area: south; }
+.wall-east { grid-area: east; }
+
+.american-wall-tile {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid #9cb8a8;
+  border-radius: 2px;
+  background: linear-gradient(135deg, #6c9e8a, #285745);
+}
+
+.american-wall-tile.empty {
+  visibility: hidden;
+}
+
+.american-wall-tile.wall-break {
+  background: #f4c95d;
+  border-color: #fff3bd;
+}
+
+.card-target {
+  margin-bottom: 18px;
+  padding: 12px;
+  border: 1px solid #79988a;
+  border-radius: 6px;
+}
+
+.card-target h2 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.card-target p {
+  margin: 8px 0;
+  font-size: 0.8rem;
+}
+
+.card-target-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.card-target-controls label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.card-target-controls select {
+  max-width: 100%;
+  padding: 6px;
+  font: inherit;
+}
+
+.card-entry textarea {
+  display: block;
+  width: 100%;
+  min-height: 8rem;
+  margin: 8px 0;
+  padding: 8px;
+  font: inherit;
+}
+
+.card-entry code {
+  overflow-wrap: anywhere;
+}
+
+.card-example {
+  margin-top: 12px;
+  padding: 8px;
+  border: 1px solid #79988a;
+  border-radius: 6px;
+}
+
+.card-example-label {
+  color: #f0d99c;
+  font-weight: 700;
+}
+
+.card-example-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.card-example-group {
+  display: flex;
+  gap: 1px;
+}
+
+.card-example-group .tile {
+  width: 27px;
+  height: 38px;
+  border-bottom-width: 2px;
+  border-radius: 3px;
+}
+
+.card-example-error {
+  color: #ffd2c9;
+}
+
 .tile.wall-tile {
   width: 31.5px;
   height: 42.75px;
@@ -546,11 +847,9 @@ h1 {
 }
 
 .play-area {
-  grid-area: play-area;
-  min-height: 220px;
-  padding: 17px 20px 21px;
-  border-top: 1px solid rgba(231, 207, 151, 0.25);
-  background: #133a30;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px 10px;
 }
 
 .rules {
@@ -677,6 +976,14 @@ h1 {
   cursor: grabbing;
 }
 
+.hand button.tile:disabled {
+  cursor: default;
+}
+
+.hand button.tile:disabled:hover {
+  transform: none;
+}
+
 .hand button.tile.dragging {
   opacity: 0.5;
 }
@@ -720,6 +1027,13 @@ button.tile.recommended {
   width: 45px;
   height: 61.5px;
   font-size: 1.5rem;
+}
+
+.american-tile-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .tile.bamboo {
@@ -896,6 +1210,20 @@ button.tile.recommended {
     min-height: 66px;
   }
 
+  .american-guide-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+
+  .american-guide-suit {
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+    gap: 2px;
+  }
+
+  .american-guide-groups {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .pattern-reference {
     padding: 10px 8px;
   }
@@ -926,6 +1254,7 @@ button.tile.recommended {
 }
 
 @media (max-width: 650px) {
+  .game-controls { flex-wrap: wrap; }
   .table-shell {
     padding: 16px 12px 24px;
   }
@@ -1009,7 +1338,168 @@ button.tile.recommended {
     font-size: 1.12rem;
   }
 
-  .play-area {
-    padding: 15px 10px 18px;
-  }
+  .play-area { padding: 8px 2px 6px; }
+}
+
+body[data-layout="iphone"] .table-shell {
+  width: min(430px, 100%);
+  padding: 6px 6px 16px;
+}
+
+body[data-layout="iphone"] .topbar {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 5px;
+}
+
+body[data-layout="iphone"] .eyebrow,
+body[data-layout="iphone"] .variant-note,
+body[data-layout="iphone"] .drawn-legend,
+body[data-layout="iphone"] .lantern,
+body[data-layout="iphone"]:not(.phone-card) .card-target,
+body[data-layout="iphone"]:not(.phone-card) .card-entry,
+body[data-layout="iphone"]:not(.phone-guides) .symbol-reference,
+body[data-layout="iphone"]:not(.phone-guides) .pattern-reference,
+body[data-layout="iphone"]:not(.phone-wall) .wall-area,
+body[data-layout="iphone"]:not(.phone-narration) .turn-commentary,
+body[data-layout="iphone"]:not(.phone-bots) .player:not(.player-bottom) .player-hand > .tile,
+body[data-layout="iphone"]:not(.phone-tutor) .tutor-note,
+body[data-layout="iphone"]:not(.phone-more) #game-help,
+body[data-layout="iphone"]:not(.phone-more) .guide-controls,
+body[data-layout="iphone"]:not(.phone-more) .hand-help {
+  display: none;
+}
+
+body[data-layout="iphone"] h1 {
+  font-size: 1.15rem;
+}
+
+body[data-layout="iphone"] .game-controls {
+  width: 100%;
+  justify-content: space-between;
+  gap: 5px;
+}
+
+body[data-layout="iphone"] .variant-control {
+  min-width: 0;
+  gap: 2px;
+  font-size: 0.68rem;
+}
+
+body[data-layout="iphone"] .variant-control select {
+  max-width: 100%;
+  padding: 6px;
+}
+
+body[data-layout="iphone"] .new-game-button {
+  padding: 7px 8px;
+  white-space: nowrap;
+}
+
+body[data-layout="iphone"] .phone-tools {
+  display: flex;
+  gap: 5px;
+  margin: 0 0 5px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+body[data-layout="iphone"] .phone-tools button {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 5px 8px;
+  border: 1px solid #79988a;
+  border-radius: 6px;
+  background: #133a30;
+  color: #f7f1df;
+  font-size: 0.72rem;
+}
+
+body[data-layout="iphone"] .board-top-row {
+  gap: 4px;
+  padding: 3px 6px;
+}
+
+body[data-layout="iphone"] .phone-discard-label {
+  display: block;
+  color: #e7dcc0;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+body[data-layout="iphone"] .discard-pile {
+  min-height: 38px;
+}
+
+body[data-layout="iphone"] .discard-pile .tile.discard-tile {
+  width: 25px;
+  height: 35px;
+  font-size: 0.85rem;
+}
+
+body[data-layout="iphone"] .board {
+  min-height: 0;
+  grid-template:
+    auto auto auto
+    / minmax(0, 1fr) 82px minmax(0, 1fr);
+  gap: 3px;
+  padding: 5px;
+}
+
+body[data-layout="iphone"] .player {
+  gap: 2px;
+  padding: 4px;
+  font-size: 0.7rem;
+}
+
+body[data-layout="iphone"] .player-info,
+body[data-layout="iphone"] .player-score {
+  font-size: 0.62rem;
+}
+
+body[data-layout="iphone"] .table-center {
+  padding: 2px;
+  font-size: 0.65rem;
+}
+
+body[data-layout="iphone"] .round-label,
+body[data-layout="iphone"] .wall-count {
+  margin: 1px 0;
+  font-size: 0.65rem;
+}
+
+body[data-layout="iphone"] .play-area {
+  padding: 4px 2px;
+}
+
+body[data-layout="iphone"] .turn-message {
+  min-height: 0;
+  margin-bottom: 5px;
+  font-size: 0.78rem;
+}
+
+body[data-layout="iphone"] .hand {
+  gap: 3px;
+  min-height: 0;
+}
+
+body[data-layout="iphone"] .hand button.tile {
+  width: clamp(40px, 11vw, 46px);
+  height: 58px;
+  font-size: 1.45rem;
+}
+
+body[data-layout="iphone"] .actions {
+  min-height: 0;
+  margin-top: 6px;
+}
+
+body[data-layout="iphone"] .actions button {
+  min-height: 42px;
+  padding: 6px 10px;
+}
+
+body[data-layout="iphone"] .undo-status {
+  margin: 5px 0 0;
 }

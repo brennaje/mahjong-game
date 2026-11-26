@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#123c32">
   <title>Mahjong Table</title>
   <link rel="stylesheet" href="styles.css">
+  <script src="american-card.js" defer></script>
   <script src="game.js" defer></script>
 </head>
 <body>
@@ -23,26 +24,65 @@
             <option value="hong-kong">Hong Kong Old Style</option>
             <option value="japanese-riichi">Japanese Riichi (core)</option>
             <option value="taiwanese-16">Taiwanese 16-tile</option>
-            <option value="american">American (simplified, no card)</option>
+            <option value="american">American</option>
+          </select>
+        </label>
+        <label class="variant-control" for="layout-select">
+          <span>Layout</span>
+          <select id="layout-select">
+            <option value="pc">PC</option>
+            <option value="iphone">iPhone</option>
           </select>
         </label>
         <button class="new-game-button" id="new-game" type="button">New hand</button>
       </div>
     </header>
+    <p id="layout-status" class="layout-status" role="status" aria-live="polite"></p>
+    <nav class="phone-tools" aria-label="iPhone display options">
+      <button type="button" data-phone-panel="wall" aria-controls="wall-area" aria-expanded="false">Show wall</button>
+      <button type="button" data-phone-panel="guides" aria-controls="symbol-reference pattern-reference" aria-expanded="false">Show guides</button>
+      <button type="button" data-phone-panel="narration" aria-controls="turn-commentary" aria-expanded="false">Show narration</button>
+      <button type="button" data-phone-panel="card" aria-controls="card-target card-entry" aria-expanded="false">Show card</button>
+      <button type="button" data-phone-panel="bots" aria-controls="player-1 player-2 player-3" aria-expanded="false">Show bot tiles</button>
+      <button type="button" data-phone-panel="tutor" aria-controls="tutor-note" aria-expanded="false">Show tutor</button>
+      <button type="button" data-phone-panel="more" aria-controls="game-help guide-settings bot-settings tutor-settings" aria-expanded="false">Show settings</button>
+    </nav>
     <p class="variant-note" id="variant-note" aria-live="polite"></p>
+
+    <section class="card-target" id="card-target" aria-labelledby="card-target-title">
+      <h2 id="card-target-title">American card and target</h2>
+      <div class="card-target-controls">
+        <label for="american-card-source">Card for the next American hand
+          <select id="american-card-source">
+            <option value="none">Simplified practice (no card)</option>
+            <option value="supplied">Provided patterns</option>
+            <option value="private">Saved private card</option>
+          </select>
+        </label>
+        <label for="american-card-target">Show a combination
+          <select id="american-card-target">
+            <option value="">Choose a card first</option>
+          </select>
+        </label>
+      </div>
+      <p>The example is a visual target only; all available combinations on the chosen card remain playable. Card selection applies to the next hand.</p>
+      <p>Provided patterns use a one-point base: the winner earns the listed points, without deductions, and scores accumulate across hands. These X patterns are treated as exposable. Incomplete or ambiguous patterns are unavailable; this is not an official card.</p>
+      <div id="american-card-target-example" aria-live="polite"></div>
+    </section>
 
     <section class="game-layout" aria-label="Mahjong game">
       <aside class="symbol-reference" id="symbol-reference" aria-labelledby="symbol-reference-title">
         <h2 id="symbol-reference-title">Tile symbol guide</h2>
-        <p>Symbols used across the available rulesets.</p>
-        <table class="symbol-table" aria-label="Mahjong tile symbols and names">
+        <p id="symbol-guide-description">Symbols used across the available rulesets.</p>
+        <table class="symbol-table" id="symbol-table" aria-label="Mahjong tile symbols and names">
           <tbody id="symbol-table-body"></tbody>
         </table>
+        <div class="american-guide" id="american-symbol-guide" aria-label="American Mah Jongg tile chart" hidden></div>
       </aside>
 
       <aside class="pattern-reference" id="pattern-reference" aria-labelledby="pattern-reference-title">
         <h2 id="pattern-reference-title">Example melds and pair</h2>
-        <p>A winning hand uses its ruleset’s required melds plus one pair. Green outlines mark melds; gold marks the pair.</p>
+        <p id="pattern-description">A winning hand uses its ruleset’s required melds plus one pair. Green outlines mark melds; gold marks the pair.</p>
         <table class="pattern-table" aria-label="Examples of Mahjong melds and pairs">
           <thead>
             <tr>
@@ -101,67 +141,95 @@
       </aside>
 
       <div class="board-top-row">
-        <div class="wall-display" id="wall-display" aria-hidden="true"></div>
+        <div class="wall-area" id="wall-area">
+          <div class="dice-results" id="dice-results" aria-live="polite" hidden></div>
+          <div class="wall-display" id="wall-display" aria-hidden="true"></div>
+        </div>
+        <span class="phone-discard-label">Discards</span>
         <div class="discard-pile" id="discard-pile" aria-label="Discarded tiles"></div>
       </div>
 
       <section class="board" aria-label="Mahjong table">
-        <div class="player player-north" id="player-2"></div>
-        <div class="player player-west" id="player-3"></div>
+        <div class="player player-top" id="player-2"></div>
+        <div class="player player-left" id="player-3"></div>
         <div class="table-center">
           <div class="lantern" aria-hidden="true">萬</div>
           <p class="round-label" id="round-label"></p>
           <p class="wall-count" id="wall-count"></p>
           <p class="drawn-legend">Gold outline marks a bot's latest draw</p>
         </div>
-        <div class="player player-east" id="player-1"></div>
-        <div class="player player-south" id="player-0"></div>
-      </section>
-
-      <section class="play-area" aria-live="polite">
-        <div class="turn-message" id="turn-message"></div>
-        <div class="turn-commentary">
-          <div class="turn-narration" id="turn-narration" role="status" aria-live="polite">Turn narration will explain each player's actions.</div>
-          <label class="voice-control" for="voice-enabled">
-            <input id="voice-enabled" type="checkbox" checked>
-            Speak turn narration
-          </label>
-        </div>
-        <div class="tutor-note" id="tutor-note" role="status" aria-live="polite"></div>
-        <div class="melds" id="melds"></div>
-        <p class="hand-help" id="hand-help">Click Draw when it is your turn to draw, then click a tile to discard. Drag tiles to arrange them; use Alt+Left/Right when a tile is focused.</p>
-        <div class="hand" id="hand" aria-label="Your tiles" aria-describedby="hand-help"></div>
-        <div class="actions" id="actions"></div>
-        <section class="game-review" id="game-review" aria-labelledby="game-review-title" hidden>
-          <h2 id="game-review-title">Game review</h2>
-          <p id="game-review-summary" aria-live="polite"></p>
-          <div class="game-review-table-wrap">
-            <table class="game-review-table">
-              <thead>
-                <tr>
-                  <th scope="col">Turn</th>
-                  <th scope="col">Your move</th>
-                  <th scope="col">Best estimate</th>
-                  <th scope="col">Your win chance</th>
-                  <th scope="col">Best win chance</th>
-                  <th scope="col">Comparison</th>
-                </tr>
-              </thead>
-              <tbody id="game-review-rows"></tbody>
-            </table>
+        <div class="player player-right" id="player-1"></div>
+        <section class="player player-bottom" id="player-0" aria-label="Your seat">
+          <div id="player-0-summary"></div>
+          <div class="play-area" aria-live="polite">
+            <div class="turn-message" id="turn-message"></div>
+            <div class="turn-commentary" id="turn-commentary">
+              <div class="turn-narration" id="turn-narration" role="status" aria-live="polite">Turn narration will explain each player's actions.</div>
+              <label class="voice-control" for="voice-enabled">
+                <input id="voice-enabled" type="checkbox" checked>
+                Speak turn narration
+              </label>
+            </div>
+            <div class="tutor-note" id="tutor-note" role="status" aria-live="polite"></div>
+            <div class="melds" id="melds"></div>
+            <p class="hand-help" id="hand-help">Click Draw when it is your turn to draw, then click a tile to discard. Drag tiles to arrange them; use Alt+Left/Right when a tile is focused.</p>
+            <div class="hand" id="hand" aria-label="Your tiles" aria-describedby="hand-help"></div>
+            <p class="undo-status" id="undo-status" role="status" aria-live="polite"></p>
+            <div class="actions" id="actions"></div>
+            <section class="game-review" id="game-review" aria-labelledby="game-review-title" hidden>
+              <h2 id="game-review-title">Game review</h2>
+              <p id="game-review-summary" aria-live="polite"></p>
+              <div class="game-review-table-wrap">
+                <table class="game-review-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Turn</th>
+                      <th scope="col">Your move</th>
+                      <th scope="col">Best estimate</th>
+                      <th scope="col">Your win chance</th>
+                      <th scope="col">Best win chance</th>
+                      <th scope="col">Comparison</th>
+                    </tr>
+                  </thead>
+                  <tbody id="game-review-rows"></tbody>
+                </table>
+              </div>
+              <p class="game-review-method" id="game-review-method"></p>
+            </section>
           </div>
-          <p class="game-review-method" id="game-review-method"></p>
         </section>
       </section>
     </section>
 
-    <details class="rules">
+    <details class="rules" id="game-help">
       <summary>How to play</summary>
-      <p>You play your own hand against three automatic opponents. Bot settings let you show or hide their concealed tiles and control spoken bot-move narration; exposed melds remain visible. The narration describes draws, discards, claims, and turns skipped by claims. While speech plays, the active player's panel and the tile being named glow. Draws animate from the wall as they are spoken, and discards move to the center when narrated. Use Speak turn narration to turn all speech off. When tutor guidance is enabled, it suggests a discard based on pairs and sequence connections; treat it as a learning aid, not a guaranteed best move. When your turn requires a draw, click Draw, then click a tile to discard; use Draw for replacement tiles after a Kong as well. Drag tiles or use Alt+Left/Right while focused to arrange your hand. Click <strong>Declare win</strong> when the hand is complete. You can also choose any eligible claim after an opponent discards. After a hand ends, select <strong>Game review</strong> to compare your discards and win declarations with approximate self-draw estimates; meld claims, passes, Riichi, and Kong choices are not scored.</p>
-      <p>Choose a ruleset above; it applies to the next hand. Chinese Classical and Hong Kong use four melds and a pair. Riichi adds a basic riichi declaration and a small set of yaku. Taiwanese uses 16 tiles and five melds. American is an explicitly simplified, card-free practice mode using four matching sets, a natural pair, and jokers; it is not an official NMJL hand card. The scoreboard adds 1 point per win and carries totals across hands (until the page is reloaded); official hand scoring, Charleston, furiten, and special hands are not implemented.</p>
+      <p>Choose iPhone or PC layout above. In iPhone layout, use the display buttons to reveal extra information. After your discard or claim pass, choose Undo to change it or Continue to let the other players act. Other supported actions can be undone until your next action. Charleston passes cannot be undone because all four players pass simultaneously.</p>
+      <p>You play your own hand against three automatic opponents. Bot settings let you show or hide their concealed tiles and control spoken bot-move narration; exposed melds remain visible. The narration describes draws, discards, claims, and turns skipped by claims. While speech plays, the active player's panel and the tile being named glow. Draws animate from the wall as they are spoken, and discards move to the center when narrated. Use Speak turn narration to turn all speech off. When tutor guidance is enabled, it suggests a discard based on pairs and sequence connections; treat it as a learning aid, not a guaranteed best move. When your turn requires a draw, click Draw, then click a tile to discard. In the non-American rulesets, also use Draw for replacement tiles after a Kong; in American play, discard after a Kong claim. Drag tiles or use Alt+Left/Right while focused to arrange your hand. Click <strong>Declare win</strong> when the hand is complete. You can also choose any eligible claim after an opponent discards. After a hand ends, select <strong>Game review</strong> to compare your discards and win declarations with approximate self-draw estimates; meld claims, passes, Riichi, and Kong choices are not scored.</p>
+      <p>Choose a ruleset above; it applies to the next hand. Chinese Classical and Hong Kong use four melds and a pair. Riichi adds a basic riichi declaration and a small set of yaku. Taiwanese uses 16 tiles and five melds. American uses Craks, Dots, Bams, winds, dragons, flowers, and jokers; blank tiles are not in play. Four two-high walls are shown before dealing. On a new game, each player rolls two dice; tied high rolls are repeated to choose East. East rolls again to break the wall: count that many stacks from East's right and begin dealing at the highlighted stack. Select Deal tiles to start the Charleston. East rotates on the next hand. Choose a card at the top for card-based play, or use simplified card-free practice. Select three non-jokers for each pass; on the last pass of either Charleston you can select fewer and blind pass the remaining tiles. After the first Charleston you can choose whether to continue; the bots always agree. Scores carry across hands until the page is reloaded; the simplified and card-based American scores are separate. Furiten and some special hands in other rulesets are not implemented.</p>
     </details>
 
-    <fieldset class="guide-controls">
+    <details class="rules card-entry" id="card-entry">
+      <summary>Private American card</summary>
+      <p>Enter each concrete combination from your own card, including every suit and number variation you want to play. Your entries stay in this browser on this device; other browsers and devices do not share them. Clearing browser data removes them.</p>
+      <p>One combination per line: <code>value | X or C | regular or singles | groups</code>. X means exposed, C concealed; use singles for the Singles and Pairs category. Groups use a tile code and count, such as <code>F:2 C1:3 C2:3 C3:3 C4:3</code>. This example is not an official card hand.</p>
+      <p>Codes: C1–C9 = Craks, D1–D9 = Dots, B1–B9 = Bams, E S W N = winds, R G = dragons, 0 = Soap, F = flower. A group can contain 1–6 identical tiles; list separate groups separately. Enter naturals, not jokers. Enter the card value, not a payout.</p>
+      <p>Dead-hand declarations, courtesy passes, special penalties, and card-aware bot strategy are not yet implemented.</p>
+      <label for="american-card-text">Card combinations</label>
+      <textarea id="american-card-text" rows="6" spellcheck="false" placeholder="25 | X | regular | F:2 C1:3 C2:3 C3:3 C4:3"></textarea>
+      <div class="actions">
+        <button id="save-american-card" type="button">Save card on this device</button>
+        <button id="delete-american-card" class="secondary" type="button">Delete saved card</button>
+      </div>
+      <p>After saving, choose <strong>Saved private card</strong> at the top for your next American hand.</p>
+      <p id="american-card-status" role="status" aria-live="polite"></p>
+      <section id="american-card-preview" aria-labelledby="american-card-preview-title" hidden>
+        <h3 id="american-card-preview-title">Combination examples</h3>
+        <p>These examples reflect the text above, including unsaved edits. Jokers are shown where necessary; other jokers may substitute in groups of three or more.</p>
+        <div id="american-card-examples"></div>
+      </section>
+    </details>
+
+    <fieldset class="guide-controls" id="guide-settings">
       <legend>Reference guides</legend>
       <label>
         <input id="show-symbol-guide" type="checkbox" aria-controls="symbol-reference" checked>
@@ -173,7 +241,7 @@
       </label>
     </fieldset>
 
-    <fieldset class="guide-controls">
+    <fieldset class="guide-controls" id="bot-settings">
       <legend>Bot settings</legend>
       <label>
         <input id="show-bot-hands" type="checkbox" aria-controls="player-1 player-2 player-3" checked>
@@ -185,7 +253,7 @@
       </label>
     </fieldset>
 
-    <fieldset class="guide-controls">
+    <fieldset class="guide-controls" id="tutor-settings">
       <legend>Tutor</legend>
       <label>
         <input id="tutor-enabled" type="checkbox" aria-controls="tutor-note hand" checked>
