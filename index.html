@@ -162,7 +162,10 @@
         <section class="player player-bottom" id="player-0" aria-label="Your seat">
           <div id="player-0-summary"></div>
           <div class="play-area" aria-live="polite">
-            <div class="turn-message" id="turn-message"></div>
+            <div class="turn-status">
+              <div class="turn-message" id="turn-message"></div>
+              <p class="undo-status" id="undo-status" role="status" aria-live="polite"></p>
+            </div>
             <div class="turn-commentary" id="turn-commentary">
               <div class="turn-narration" id="turn-narration" role="status" aria-live="polite">Turn narration will explain each player's actions.</div>
               <label class="voice-control" for="voice-enabled">
@@ -174,7 +177,6 @@
             <div class="melds" id="melds"></div>
             <p class="hand-help" id="hand-help">Click Draw when it is your turn to draw, then click a tile to discard. Drag tiles to arrange them; use Alt+Left/Right when a tile is focused.</p>
             <div class="hand" id="hand" aria-label="Your tiles" aria-describedby="hand-help"></div>
-            <p class="undo-status" id="undo-status" role="status" aria-live="polite"></p>
             <div class="actions" id="actions"></div>
             <section class="game-review" id="game-review" aria-labelledby="game-review-title" hidden>
               <h2 id="game-review-title">Game review</h2>

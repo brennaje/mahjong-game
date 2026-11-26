@@ -3847,14 +3847,17 @@ function updateGuideVisibility() {
   elements.patternReference.hidden = !elements.showPatternExamples.checked;
 }
 
+const defaultLayout = window.matchMedia(
+  "(max-width: 650px), (max-width: 1000px) and (max-height: 500px) and (orientation: landscape)"
+).matches ? "iphone" : "pc";
 try {
   const preference = localStorage.getItem(LAYOUT_STORAGE);
   if (preference !== null && preference !== "pc" && preference !== "iphone") {
     throw new Error("Unrecognized layout preference.");
   }
-  elements.layoutSelect.value = preference ?? (window.matchMedia("(max-width: 650px)").matches ? "iphone" : "pc");
+  elements.layoutSelect.value = preference ?? defaultLayout;
 } catch (error) {
-  elements.layoutSelect.value = window.matchMedia("(max-width: 650px)").matches ? "iphone" : "pc";
+  elements.layoutSelect.value = defaultLayout;
   elements.layoutStatus.textContent = `Layout preference could not be loaded: ${error.message}`;
 }
 document.body.dataset.layout = elements.layoutSelect.value;

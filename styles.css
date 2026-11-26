@@ -1503,3 +1503,121 @@ body[data-layout="iphone"] .actions button {
 body[data-layout="iphone"] .undo-status {
   margin: 5px 0 0;
 }
+
+@media (orientation: landscape) and (max-height: 500px) {
+  body[data-layout="iphone"] .table-shell {
+    width: 100%;
+    padding: 2px 6px 8px;
+  }
+
+  body[data-layout="iphone"] .topbar {
+    align-items: end;
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 2px;
+  }
+
+  body[data-layout="iphone"] .game-controls {
+    width: auto;
+    justify-content: flex-end;
+  }
+
+  body[data-layout="iphone"] .variant-control {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  body[data-layout="iphone"] .phone-tools {
+    margin-bottom: 3px;
+  }
+
+  body[data-layout="iphone"] .discard-pile {
+    min-height: 32px;
+  }
+
+  body[data-layout="iphone"] .discard-pile .tile.discard-tile {
+    width: 22px;
+    height: 30px;
+  }
+
+  body[data-layout="iphone"]:not(.phone-wall) .board-top-row.american-wall-layout {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  body[data-layout="iphone"] .board-top-row {
+    padding: 0 6px;
+  }
+
+  body[data-layout="iphone"] .board {
+    grid-template-columns: minmax(0, 1fr) minmax(130px, 1.5fr) minmax(0, 1fr);
+    gap: 2px;
+    padding: 3px;
+  }
+
+  body[data-layout="iphone"] .player {
+    padding: 3px;
+  }
+
+  body[data-layout="iphone"] .player:not(.player-bottom) {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  body[data-layout="iphone"] .player:not(.player-bottom) .player-header,
+  body[data-layout="iphone"] .player:not(.player-bottom) .player-hand {
+    width: auto;
+  }
+
+  body[data-layout="iphone"] .table-center,
+  body[data-layout="iphone"] #player-0-summary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 2px 6px;
+  }
+
+  body[data-layout="iphone"] .table-center {
+    flex-direction: row;
+  }
+
+  body[data-layout="iphone"] #player-0-summary .player-header {
+    width: auto;
+  }
+
+  body[data-layout="iphone"] .play-area {
+    display: grid;
+    grid-template:
+      "status actions" auto
+      "commentary commentary" auto
+      "tutor tutor" auto
+      "melds melds" auto
+      "help help" auto
+      "hand hand" auto
+      "review review" auto
+      / minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  body[data-layout="iphone"] .turn-status { grid-area: status; }
+  body[data-layout="iphone"] .actions { grid-area: actions; margin: 0; }
+  body[data-layout="iphone"] .turn-commentary { grid-area: commentary; }
+  body[data-layout="iphone"] .tutor-note { grid-area: tutor; }
+  body[data-layout="iphone"] .melds { grid-area: melds; }
+  body[data-layout="iphone"] .hand-help { grid-area: help; }
+  body[data-layout="iphone"] .hand { grid-area: hand; gap: 2px; }
+  body[data-layout="iphone"] .game-review { grid-area: review; }
+
+  body[data-layout="iphone"] .melds:empty,
+  body[data-layout="iphone"] .turn-message {
+    margin-bottom: 0;
+  }
+
+  body[data-layout="iphone"] .hand button.tile {
+    width: clamp(38px, 6.2vw, 46px);
+    height: 58px;
+  }
+}
