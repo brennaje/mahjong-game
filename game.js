@@ -76,6 +76,7 @@ const elements = {
   americanCardExamples: document.querySelector("#american-card-examples"),
   americanCardSource: document.querySelector("#american-card-source"),
   americanCardTarget: document.querySelector("#american-card-target"),
+  americanHandStyle: document.querySelector("#american-hand-style"),
   americanCardTargetExample: document.querySelector("#american-card-target-example"),
   cardTargetBanner: document.querySelector("#card-target-banner"),
   americanCardName: document.querySelector("#american-card-name"),
@@ -137,6 +138,8 @@ const playerAreas = PLAYER_NAMES.map((_, index) =>
 let game;
 let cardLibrary = null;
 const parsedCardTexts = new Map();
+const styledCardLines = new WeakMap();
+const CONCEALED_BONUS = 10;
 let undoState = null;
 let undoContinuation = null;
 let botTimer = null;
@@ -302,7 +305,7 @@ function newGame(dealer = null, handNumber = 1, variantId = elements.variantSele
   let card = null;
   if (libraryCard) {
     try {
-      card = libraryCardLines(libraryCard);
+      card = playableCardLines(libraryCard);
     } catch (error) {
       elements.americanCardStatus.textContent = `"${libraryCard.name}" cannot be played until it is fixed: ${error.message}`;
       elements.americanCardEditor.open = true;
@@ -373,6 +376,7 @@ function newGame(dealer = null, handNumber = 1, variantId = elements.variantSele
     card,
     cardSource,
     cardName: libraryCard?.name ?? "",
+    handStyle: cardLibrary.handStyle,
     scoreSummary: "",
     discards: [],
     dealer,
@@ -4185,7 +4189,7 @@ function makeCardExample(line, title, progress = null) {
 function defaultCardLibrary(legacyText = null) {
   const cards = [{ id: BUILT_IN_CARD_ID, name: "2026 card (your list)", text: AmericanCard.defaultCardText, builtIn: true }];
   if (legacyText) cards.push({ id: "card-private", name: "My private card", text: legacyText, builtIn: false });
-  return { format: AMERICAN_LIBRARY_FORMAT, version: 1, selectedId: BUILT_IN_CARD_ID, target: "", cards };
+  return { format: AMERICAN_LIBRARY_FORMAT, version: 1, selectedId: BUILT_IN_CARD_ID, target: "", handStyle: "exposed", cards };
 }
 
 function isCardLibrary(data) {
@@ -4205,6 +4209,7 @@ function loadCardLibrary() {
       if (!isCardLibrary(data)) throw new Error("unrecognized saved card format");
       if (!data.cards.some((card) => card.id === BUILT_IN_CARD_ID)) data.cards.unshift(defaultCardLibrary().cards[0]);
       for (const card of data.cards) card.builtIn = card.id === BUILT_IN_CARD_ID;
+      data.handStyle = data.handStyle === "concealed" ? "concealed" : "exposed";
       return { library: data, message: "" };
     }
     let legacyText = null;
@@ -4241,6 +4246,32 @@ function libraryCardLines(card) {
   }
   if (entry.error) throw entry.error;
   return entry.lines;
+}
+
+/**
+ * Limits a card to the chosen hand type: Exposed plays the X patterns; Concealed plays the C patterns.
+ * A card with no patterns of that type plays all of them that way; X patterns played concealed earn a bonus.
+ */
+function applyHandStyle(lines, style) {
+  const concealed = style === "concealed";
+  const matching = lines.filter((line) => line.concealed === concealed);
+  if (matching.length) return matching;
+  return concealed
+    ? lines.map((line) => ({ ...line, concealed: true, value: line.value + CONCEALED_BONUS, playedConcealed: true }))
+    : lines;
+}
+
+/** The selected hand type's lines from a saved card, reused while the card and hand type are unchanged. */
+function playableCardLines(card) {
+  const lines = libraryCardLines(card);
+  const style = cardLibrary.handStyle;
+  let styled = styledCardLines.get(lines);
+  if (!styled) {
+    styled = {};
+    styledCardLines.set(lines, styled);
+  }
+  styled[style] ??= applyHandStyle(lines, style);
+  return styled[style];
 }
 
 function selectedLibraryCard() {
@@ -4289,13 +4320,14 @@ function applySelectedCardBeforeDeal() {
   const libraryCard = selectedLibraryCard();
   let card = null;
   try {
-    card = libraryCard ? libraryCardLines(libraryCard) : null;
+    card = libraryCard ? playableCardLines(libraryCard) : null;
   } catch {
     return false;
   }
   game.card = card;
   game.cardSource = !card ? "none" : libraryCard.builtIn ? "supplied" : "private";
   game.cardName = libraryCard?.name ?? "";
+  game.handStyle = cardLibrary.handStyle;
   render();
   return true;
 }
@@ -4361,7 +4393,7 @@ function targetMenuCard() {
   if (game?.variantId === "american" && game.card) return game.card;
   const card = selectedLibraryCard();
   try {
-    return card ? libraryCardLines(card) : null;
+    return card ? playableCardLines(card) : null;
   } catch {
     return null;
   }
@@ -4379,7 +4411,8 @@ function renderAmericanCardTarget() {
     const pattern = activeTargetPattern();
     const line = pattern === null ? null : game.card.find((item) => item.pattern === pattern);
     if (line) heading = "Your target · any card pattern wins";
-    definition = line ? americanPatternDefinition(line) : "Default: any pattern on the card";
+    const style = game.handStyle === "concealed" ? "concealed (C)" : "exposed (X)";
+    definition = line ? americanPatternDefinition(line) : `Default: any ${style} pattern on the card`;
   } else {
     const sets = `${variant.meldsToWin} ${variant.mode === "american" ? "matching sets" : "sets"}`;
     definition = `Default: ${sets} + pair${variant.mode === "riichi" ? " · riichi or a yaku" : ""}`;
@@ -4397,7 +4430,8 @@ function renderAmericanCardTarget() {
 
 /** Writes a card line as its pattern definition, such as "2026: 222 000 2222 6666 · Any 2 suits · 25 pts". */
 function americanPatternDefinition(line) {
-  return `${americanLineName(line)} · ${line.value} pts${line.concealed ? " · concealed" : ""}`;
+  const bonus = line.playedConcealed ? ` (incl. +${CONCEALED_BONUS} concealed)` : "";
+  return `${americanLineName(line)} · ${line.value} pts${bonus}${line.concealed ? " · concealed" : ""}`;
 }
 /** Rebuilds the target menu when its card changes, keeping the saved choice, then redraws the center target. */
 function updateAmericanCardTargets() {
@@ -4534,6 +4568,18 @@ elements.americanCardTarget.addEventListener("change", () => {
   renderTutor(recommendation);
   renderAmericanCardTarget();
 });
+elements.americanHandStyle.addEventListener("change", () => {
+  cardLibrary.handStyle = elements.americanHandStyle.value === "concealed" ? "concealed" : "exposed";
+  try {
+    saveCardLibrary();
+  } catch (error) {
+    elements.americanCardStatus.textContent = `Hand type could not be saved: ${error.message}`;
+  }
+  const applied = applySelectedCardBeforeDeal();
+  updateAmericanCardTargets();
+  const name = cardLibrary.handStyle === "concealed" ? "Concealed (C)" : "Exposed (X)";
+  elements.americanCardStatus.textContent = `${name} hands ${applied ? "are used for this hand." : "start with the next American hand."}`;
+});
 elements.layoutSelect.addEventListener("change", () => {
   document.body.dataset.layout = elements.layoutSelect.value;
   try {
@@ -4657,6 +4703,7 @@ try {
 }
 const loadedCardLibrary = loadCardLibrary();
 cardLibrary = loadedCardLibrary.library;
+elements.americanHandStyle.value = cardLibrary.handStyle;
 elements.americanCardStatus.textContent = loadedCardLibrary.message;
 renderCardLibraryOptions();
 loadCardEditor();

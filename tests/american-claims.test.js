@@ -179,3 +179,17 @@ test("any card line wins and only your seat focuses on the chosen target", () =>
   target.value = "";
   assert.equal(context.americanFocusFor(context.game.players[0]), null);
 });
+
+test("hand type limits the card to X or C patterns, playing X patterns concealed for a bonus when no C exists", () => {
+  const context = vm.createContext({ CONCEALED_BONUS: 10 });
+  implementation("function applyHandStyle(", "/** The selected hand type's lines", context);
+  const mixed = [{ pattern: 1, value: 25, concealed: false }, { pattern: 2, value: 50, concealed: true }];
+  assert.deepEqual(context.applyHandStyle(mixed, "exposed").map((line) => line.pattern), [1]);
+  assert.deepEqual(context.applyHandStyle(mixed, "concealed").map((line) => line.pattern), [2]);
+  assert.equal(context.applyHandStyle(mixed, "concealed")[0].value, 50);
+  const exposedOnly = [{ pattern: 1, value: 25, concealed: false }];
+  const concealed = context.applyHandStyle(exposedOnly, "concealed");
+  assert.equal(concealed[0].concealed, true);
+  assert.equal(concealed[0].value, 35);
+  assert.equal(exposedOnly[0].value, 25);
+});
