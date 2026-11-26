@@ -114,6 +114,7 @@ test("provided card scores accumulate the highest matching value without chargin
     },
     elements: { turnMessage: {} }, render() {}
   });
+  context.cardWinningLines = () => context.AmericanCard.winningLines();
   implementation("function finishHand(", "/** Starts the next hand", context);
   context.finishHand(0, "wins", 1);
   assert.deepEqual(scores, [55, 4, 7, 9]);
@@ -161,4 +162,17 @@ test("the human hand remains visible and reorderable but cannot be discarded dur
   assert.equal(controls[0].attributes["aria-disabled"], undefined);
   controls[0].onclick();
   assert.deepEqual(discarded, [1]);
+});
+
+test("a chosen target pattern is the only card line that wins", () => {
+  const target = { value: "7" };
+  const context = vm.createContext({
+    game: { card: [{ pattern: 3 }, { pattern: 7 }] },
+    elements: { americanCardTarget: target },
+    AmericanCard: { winningLines: () => [{ line: { pattern: 3 } }, { line: { pattern: 7 } }] }
+  });
+  implementation("function chosenAmericanPattern(", "/** Ranks the active card's lines", context);
+  assert.deepEqual(context.cardWinningLines([], { melds: [] }).map((match) => match.line.pattern), [7]);
+  target.value = "";
+  assert.equal(context.cardWinningLines([], { melds: [] }).length, 2);
 });

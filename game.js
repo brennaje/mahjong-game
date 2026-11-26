@@ -102,6 +102,7 @@ const elements = {
   gameReviewSummary: document.querySelector("#game-review-summary"),
   gameReviewMethod: document.querySelector("#game-review-method"),
   newGame: document.querySelector("#new-game"),
+  botTest: document.querySelector("#bot-test"),
   patternReference: document.querySelector("#pattern-reference"),
   patternDescription: document.querySelector("#pattern-description"),
   showPatternExamples: document.querySelector("#show-pattern-examples"),
@@ -150,6 +151,9 @@ const heldTileGhosts = new Map();
 const speechAvailable = typeof window.speechSynthesis !== "undefined" &&
   typeof window.SpeechSynthesisUtterance === "function";
 let voiceEnabled = speechAvailable;
+const BOT_TEST_STEP_MS = 250;
+const BOT_TEST_MAX_HANDS = 20;
+let botTest = null;
 const BOT_MOVE_DELAY_MS = 550;
 const REVIEW_SIMULATION_COUNT = 120;
 
@@ -1765,6 +1769,10 @@ function renderActions() {
     ? "Paused before another player acts. Undo your move or continue."
     : undoState ? "You can undo your last move before another player acts."
       : game.phase === "charleston" ? "Charleston passes are simultaneous and cannot be undone." : "";
+  if (botTest) {
+    elements.undoStatus.textContent = "";
+    return;
+  }
   if (undoState) addAction("Undo", undoLastMove, true);
   if (undoContinuation) {
     addAction("Continue", continueAfterMove);
@@ -2490,7 +2498,7 @@ function finishHand(winner, message, discarder = null) {
   let concealedGroups;
   if (game.card) {
     const allTiles = [...player.hand, ...player.melds.flatMap((meld) => meld.tiles)];
-    const matches = AmericanCard.winningLines(game.card, player.hand, player.melds)
+    const matches = cardWinningLines(player.hand, player)
       .map((match) => ({
         ...match,
         payments: game.cardSource === "private"
@@ -2514,6 +2522,7 @@ function finishHand(winner, message, discarder = null) {
       game.scoreSummary = `Provided pattern: ${player.name} +${best.award} points.`;
     }
     concealedGroups = best.groups;
+    game.winningLine = best.line;
   } else {
     concealedGroups = findWinningGroups(player.hand, player.melds.length, game.variantId);
   }
@@ -2547,7 +2556,7 @@ function nextHand() {
 /** Checks a complete hand against the selected rules and win conditions. */
 function isWinningHand(hand, openMeldCount, variantId, player, winType) {
   if (variantId === "american" && game?.card) {
-    return AmericanCard.winningLines(game.card, hand, player.melds).length > 0;
+    return cardWinningLines(hand, player).length > 0;
   }
   if (!isWinningShape(hand, openMeldCount, variantId)) {
     return false;
@@ -2903,21 +2912,34 @@ function americanLineName(line) {
   return line.name ?? (line.pattern ? `Line ${line.pattern}` : "Card line");
 }
 
-/** Returns the pattern chosen in the target menu, or null for "Closest to my hand" and "No example". */
+/** Returns the pattern chosen in the target menu, or null for "Default". */
 function chosenAmericanPattern() {
   const value = elements.americanCardTarget.value;
-  return value === "" || value === "auto" ? null : Number(value);
+  return value === "" ? null : Number(value);
+}
+
+/** The target pattern every seat must win with, or null when "Default" lets any card pattern win. */
+function activeTargetPattern() {
+  const pattern = chosenAmericanPattern();
+  return pattern !== null && game?.card?.some((line) => line.pattern === pattern) ? pattern : null;
+}
+
+/** Lists the card lines a hand completes, limited to the target pattern when one is chosen. */
+function cardWinningLines(hand, player) {
+  const pattern = activeTargetPattern();
+  return AmericanCard.winningLines(game.card, hand, player.melds)
+    .filter((match) => pattern === null || match.line.pattern === pattern);
 }
 
 /** Ranks the active card's lines by how few tiles a player still needs, focusing on a chosen pattern when it still fits. */
-function rankAmericanLines(hand, melds, pattern = null) {
+function rankAmericanLines(hand, melds, pattern = null, strict = false) {
   if (!game.card) return [];
   const ranked = game.card
     .map((line) => AmericanCard.progress(line, hand, melds))
     .filter(Boolean)
     .sort((a, b) => a.need - b.need || b.line.value - a.line.value);
   const focused = pattern === null ? [] : ranked.filter((entry) => entry.line.pattern === pattern);
-  return focused.length ? focused : ranked;
+  return focused.length || (strict && pattern !== null) ? focused : ranked;
 }
 
 /** Lists the tiles still missing from a line, such as "2 × 4 Bamboo". */
@@ -2928,9 +2950,9 @@ function describeAmericanNeeds(progress) {
     .join(", ");
 }
 
-/** The pattern a player aims for: your chosen target, or each bot's own closest line. */
-function americanFocusFor(player) {
-  return player === game.players[0] ? chosenAmericanPattern() : null;
+/** The pattern every player aims for: the chosen target, or null so each player follows its own closest line. */
+function americanFocusFor() {
+  return activeTargetPattern();
 }
 
 /** Picks the tiles least useful to the closest card lines for a discard or pass. */
@@ -2981,7 +3003,7 @@ function americanClaimChoice(player, options, discardTile) {
     if (option.type === "win") continue;
     const used = new Set(option.tiles.map((tile) => tile.id));
     const melds = [...player.melds, { tiles: [...option.tiles, discardTile], targetKey: option.targetKey }];
-    const after = rankAmericanLines(player.hand.filter((tile) => !used.has(tile.id)), melds, focus)[0];
+    const after = rankAmericanLines(player.hand.filter((tile) => !used.has(tile.id)), melds, focus, true)[0];
     if (after && (!bestClaim || after.need < bestClaim.after.need)) bestClaim = { option, after };
   }
   const helps = Boolean(bestClaim && before && bestClaim.after.need < before.need);
@@ -3547,7 +3569,7 @@ function recordHumanWin(action) {
 
 /** Schedules the next bot action after narration and animations can finish. */
 function scheduleBotTurn(delay = BOT_MOVE_DELAY_MS) {
-  if (botTimer !== null || !game || game.winner !== null ||
+  if (botTest || botTimer !== null || !game || game.winner !== null ||
       game.current === 0 || game.privacyRequired) {
     return;
   }
@@ -3559,6 +3581,81 @@ function scheduleBotTurn(delay = BOT_MOVE_DELAY_MS) {
     }
     runBotTurn();
   }, delay);
+}
+
+/** Starts an American hand in which every seat, including yours, is played by a bot until one wins. */
+function startBotTest() {
+  if (elements.variantSelect.value !== "american") return;
+  if (botTimer !== null) {
+    clearTimeout(botTimer);
+    botTimer = null;
+  }
+  if (speechAvailable) window.speechSynthesis.cancel();
+  botTest = { timer: null, hands: 1, idleSteps: 0, signature: "" };
+  document.body.classList.add("bot-test-running");
+  elements.botTest.textContent = "Stop test";
+  elements.botTest.setAttribute("aria-pressed", "true");
+  newGame();
+  elements.turnMessage.textContent = "Bot test: all four seats are played by bots.";
+  botTest.timer = setTimeout(stepBotTest, BOT_TEST_STEP_MS);
+}
+
+/** Ends the all-bot test and returns control of your seat. */
+function stopBotTest(message = "") {
+  if (!botTest) return;
+  clearTimeout(botTest.timer);
+  botTest = null;
+  document.body.classList.remove("bot-test-running");
+  elements.botTest.textContent = "Bot test";
+  elements.botTest.setAttribute("aria-pressed", "false");
+  if (!game) return;
+  render();
+  if (message) elements.turnMessage.textContent = message;
+  scheduleBotTurn();
+}
+
+/** Performs one move of the all-bot test, playing your seat with the bot strategy. */
+function stepBotTest() {
+  if (!botTest || !game) return;
+  botTest.timer = null;
+  if (game.winner !== null) {
+    const hands = botTest.hands === 1 ? "1 hand" : `${botTest.hands} hands`;
+    stopBotTest(`Bot test complete: ${game.players[game.winner].name === "You" ? "your seat's bot" : game.players[game.winner].name} won with ${game.winningLine ? americanLineName(game.winningLine) : "a card pattern"} after ${hands}. ${game.scoreSummary ?? ""}`.trim());
+    return;
+  }
+  if (game.phase === "draw") {
+    if (botTest.hands >= BOT_TEST_MAX_HANDS) {
+      stopBotTest(`Bot test stopped: no bot won in ${BOT_TEST_MAX_HANDS} hands.`);
+      return;
+    }
+    botTest.hands += 1;
+    nextHand();
+  } else if (game.phase === "undo-pending") {
+    continueAfterMove();
+  } else if (game.phase === "setup") {
+    dealAmericanTiles();
+  } else if (game.phase === "charleston") {
+    game.charlestonSelection = botCharlestonPass(0).map((tile) => tile.id);
+    passCharleston();
+  } else if (game.phase === "charleston-choice") {
+    game.phase = "charleston";
+    render();
+  } else if (game.current === 0 && game.phase === "awaiting-draw") {
+    drawHumanTile();
+  } else {
+    runBotTurn();
+  }
+  if (!botTest) return;
+  const signature = [game.handNumber, game.phase, game.current, game.claimIndex, game.discards.length,
+    game.wall?.length, game.players.map((player) => player.hand.length + player.melds.length * 10).join(",")].join("|");
+  botTest.idleSteps = signature === botTest.signature ? botTest.idleSteps + 1 : 0;
+  botTest.signature = signature;
+  if (botTest.idleSteps > 10) {
+    stopBotTest(`Bot test stopped: play could not continue in the ${game.phase} phase.`);
+    return;
+  }
+  elements.turnMessage.textContent = `Bot test · hand ${botTest.hands}: ${elements.turnNarration.textContent || "bots are playing."}`;
+  botTest.timer = setTimeout(stepBotTest, BOT_TEST_STEP_MS);
 }
 
 /** Chooses the preferred available English speech-synthesis voice. */
@@ -3669,7 +3766,7 @@ function focusNarrationWord(wordRanges, charIndex) {
 /** Speaks a turn message while synchronizing focus and tile animations. */
 function narrateTurn(message, { playerIndex, cues = [] } = {}) {
   const botSpeechDisabled = playerIndex > 0 && !elements.botNarrationEnabled.checked;
-  if (!voiceEnabled || !speechAvailable || botSpeechDisabled) {
+  if (botTest || !voiceEnabled || !speechAvailable || botSpeechDisabled) {
     elements.turnNarration.textContent = message;
     playReadyTileAnimationsImmediately();
     return;
@@ -3799,7 +3896,7 @@ function narrateClaimAction(claimantIndex, option, discard) {
 
 /** Chooses and performs the bot's best available turn action. */
 function runBotTurn() {
-  if (!game || game.winner !== null || game.current === 0 || game.privacyRequired) {
+  if (!game || game.winner !== null || (game.current === 0 && !botTest) || game.privacyRequired) {
     return;
   }
   undoState = null;
@@ -3838,7 +3935,7 @@ function runBotTurn() {
   }
   const exchange = findAmericanJokerExchanges(game.current).find((candidate) => {
     if (!game.card) return true;
-    const best = rankAmericanLines(player.hand, player.melds)[0];
+    const best = rankAmericanLines(player.hand, player.melds, americanFocusFor(player))[0];
     const group = best?.groups.find((item) => item.tiles.some((tile) => tile.id === candidate.tileId));
     return !group || group.size >= 3;
   });
@@ -4090,7 +4187,7 @@ function makeCardExample(line, title, progress = null) {
 function defaultCardLibrary(legacyText = null) {
   const cards = [{ id: BUILT_IN_CARD_ID, name: "2026 card (your list)", text: AmericanCard.defaultCardText, builtIn: true }];
   if (legacyText) cards.push({ id: "card-private", name: "My private card", text: legacyText, builtIn: false });
-  return { format: AMERICAN_LIBRARY_FORMAT, version: 1, selectedId: BUILT_IN_CARD_ID, target: "auto", cards };
+  return { format: AMERICAN_LIBRARY_FORMAT, version: 1, selectedId: BUILT_IN_CARD_ID, target: "", cards };
 }
 
 function isCardLibrary(data) {
@@ -4184,6 +4281,7 @@ function updateAmericanCardVisibility() {
   const american = elements.variantSelect.value === "american";
   elements.americanCardPanel.hidden = !american;
   elements.americanCardPhoneButton.hidden = !american;
+  elements.botTest.hidden = !american;
   if (!american && document.body.classList.contains("phone-card")) setPhonePanel("card", false);
 }
 
@@ -4273,115 +4371,35 @@ function targetMenuCard() {
 
 function renderAmericanCardTarget() {
   if (!game) return;
-  if (!(game.variantId === "american" && game.card)) {
-    renderPlannedTarget();
-    return;
-  }
-  const value = elements.americanCardTarget.value;
-  const card = game?.variantId === "american" ? game.card : null;
-  let line = null;
-  let progress = null;
-  if (card && value) {
-    const active = game.winner === null && !game.privacyRequired && game.phase !== "setup";
-    const ranked = active ? rankAmericanLines(game.players[0].hand, game.players[0].melds, chosenAmericanPattern()) : [];
-    if (value === "auto") {
-      progress = ranked[0] ?? null;
-      line = progress?.line ?? card[0];
-    } else {
-      const pattern = Number(value);
-      progress = ranked.find((entry) => entry.line.pattern === pattern) ?? null;
-      line = progress?.line ?? card.find((item) => item.pattern === pattern) ?? null;
-    }
-  }
-  elements.cardTargetBanner.closest(".table-center")?.classList.toggle("has-card-target", Boolean(line));
-  if (!line) {
-    elements.americanCardTargetExample.replaceChildren();
-    elements.cardTargetBanner.hidden = true;
-    return;
-  }
-  const away = progress ? ` · ${progress.need === 0 ? "complete" : `need ${progress.need}`}` : "";
-  const label = `${americanLineName(line)} · ${line.value} pts${line.concealed ? " · concealed" : ""}${away}`;
-  elements.americanCardTargetExample.replaceChildren(makeCardExample(line, label, progress));
-  elements.cardTargetBanner.hidden = false;
-}
-
-/** Draws the pattern to win for rulesets without a card: the closest sets and pair, with tiles still needed dimmed. */
-function renderPlannedTarget() {
   const variant = VARIANTS[game.variantId];
-  const player = game.players[0];
-  const american = variant.mode === "american";
-  const { samples } = tileTotals(game.variantId);
-  const blank = (count) => Array.from({ length: count }, () => ({ tile: null, held: false }));
-  const groups = player.melds.map((meld) => ({
-    kind: "exposed", tiles: meld.tiles.map((tile) => ({ tile, held: true }))
-  }));
-  let need = null;
-  if (game.phase !== "setup" && player.hand.length > 0 && !game.privacyRequired) {
-    const plan = planWinningHand(0);
-    need = plan.need;
-    const planned = plan.groups.map((group) => ({
-      kind: group.kind,
-      tiles: group.tiles.map((item) => ({
-        tile: item.joker ? samples.get("joker") : item.key ? samples.get(item.key) : null,
-        held: item.held
-      }))
-    }));
-    groups.push(...planned.filter((group) => group.kind !== "pair"), ...planned.filter((group) => group.kind === "pair"));
+  let heading = "Pattern to win";
+  let definition;
+  if (game.card && game.winner !== null && game.winningLine) {
+    heading = `${game.players[game.winner].name} won with`;
+    definition = americanPatternDefinition(game.winningLine);
+  } else if (game.card) {
+    const pattern = activeTargetPattern();
+    const line = pattern === null ? null : game.card.find((item) => item.pattern === pattern);
+    definition = line ? americanPatternDefinition(line) : "Default: any pattern on the card";
   } else {
-    for (let slot = 0; slot < variant.meldsToWin; slot += 1) groups.push({ kind: "any", tiles: blank(3) });
-    groups.push({ kind: "pair", tiles: blank(2) });
+    const sets = `${variant.meldsToWin} ${variant.mode === "american" ? "matching sets" : "sets"}`;
+    definition = `Default: ${sets} + pair${variant.mode === "riichi" ? " · riichi or a yaku" : ""}`;
   }
-  const sets = `${variant.meldsToWin} ${american ? "matching sets" : "sets"}`;
-  const status = need === null ? "" : need === 0 ? " · complete" : ` · need ${need}`;
-  const label = `Pattern to win: ${sets} + pair${variant.mode === "riichi" ? " · riichi or a yaku" : ""}${status}`;
+  const label = document.createElement("div");
+  label.className = "pattern-text-heading";
+  label.textContent = heading;
+  const text = document.createElement("div");
+  text.className = "pattern-text";
+  text.textContent = definition;
+  elements.americanCardTargetExample.replaceChildren(label, text);
   elements.cardTargetBanner.closest(".table-center")?.classList.add("has-card-target");
-  elements.americanCardTargetExample.replaceChildren(makePatternExample(label, groups));
   elements.cardTargetBanner.hidden = false;
 }
 
-/** Builds a scaled tile drawing of planned groups; unknown tiles show as "?". */
-function makePatternExample(title, groups) {
-  const kindNames = { exposed: "Exposed set", pung: "Matching set", chow: "Run", pair: "Pair", any: "Any set" };
-  const example = document.createElement("div");
-  example.className = "card-example";
-  const label = document.createElement("div");
-  label.className = "card-example-label";
-  label.textContent = title;
-  const container = document.createElement("div");
-  container.className = "card-example-groups";
-  container.style.setProperty("--example-slots", String(groups.reduce((sum, group) => sum + group.tiles.length, 0) + groups.length - 1));
-  container.style.setProperty("--example-max-group", String(Math.max(...groups.map((group) => group.tiles.length))));
-  for (const group of groups) {
-    const element = document.createElement("div");
-    element.className = "card-example-group";
-    element.setAttribute("role", "group");
-    const have = group.tiles.filter((item) => item.held).length;
-    element.setAttribute("aria-label", `${kindNames[group.kind] ?? "Set"}, you have ${have} of ${group.tiles.length}`);
-    for (const { tile, held } of group.tiles) {
-      let face;
-      let description;
-      if (tile) {
-        face = makeTile(tile, true);
-        face.removeAttribute("data-tile-id");
-        description = tileDescription(tile);
-      } else {
-        face = document.createElement("span");
-        face.className = "tile small pattern-any";
-        face.textContent = "?";
-        description = group.kind === "pair" ? "Any pair tile" : "Any set tile";
-      }
-      face.setAttribute("role", "img");
-      face.setAttribute("aria-label", description);
-      face.title = description;
-      if (!held) face.classList.add("card-missing");
-      element.append(face);
-    }
-    container.append(element);
-  }
-  example.append(label, container);
-  return example;
+/** Writes a card line as its pattern definition, such as "2026: 222 000 2222 6666 · Any 2 suits · 25 pts". */
+function americanPatternDefinition(line) {
+  return `${americanLineName(line)} · ${line.value} pts${line.concealed ? " · concealed" : ""}`;
 }
-
 /** Rebuilds the target menu when its card changes, keeping the saved choice, then redraws the center target. */
 function updateAmericanCardTargets() {
   const card = targetMenuCard();
@@ -4389,8 +4407,7 @@ function updateAmericanCardTargets() {
     americanTargetCard = card;
     const options = card
       ? [
-        new Option("No example", ""),
-        new Option("Closest to my hand", "auto"),
+        new Option("Default", ""),
         ...AmericanCard.patterns(card).map((pattern) => new Option(
           `${pattern.name} · ${pattern.value} pts${pattern.concealed ? " · concealed" : ""}`, String(pattern.id)))
       ]
@@ -4399,9 +4416,8 @@ function updateAmericanCardTargets() {
     elements.americanCardTarget.disabled = !card;
     if (card) {
       const saved = cardLibrary.target;
-      const match = saved === "" || saved === "auto" ? saved
-        : AmericanCard.patterns(card).find((pattern) => pattern.name === saved)?.id;
-      elements.americanCardTarget.value = match === undefined ? "auto" : String(match);
+      const match = AmericanCard.patterns(card).find((pattern) => pattern.name === saved)?.id;
+      elements.americanCardTarget.value = match === undefined ? "" : String(match);
     }
   }
   renderAmericanCardTarget();
@@ -4507,8 +4523,8 @@ elements.americanCardSource.addEventListener("change", () => {
 });
 elements.americanCardTarget.addEventListener("change", () => {
   const value = elements.americanCardTarget.value;
-  cardLibrary.target = value === "" || value === "auto" ? value
-    : AmericanCard.patterns(americanTargetCard).find((pattern) => String(pattern.id) === value)?.name ?? "auto";
+  cardLibrary.target = value === "" ? ""
+    : AmericanCard.patterns(americanTargetCard).find((pattern) => String(pattern.id) === value)?.name ?? "";
   try {
     saveCardLibrary();
   } catch (error) {
@@ -4535,13 +4551,18 @@ document.querySelectorAll("[data-phone-panel]").forEach((button) => {
     setPhonePanel(panel, !document.body.classList.contains(`phone-${panel}`));
   });
 });
-elements.newGame.addEventListener("click", () => newGame());
+elements.newGame.addEventListener("click", () => {
+  stopBotTest();
+  newGame();
+});
+elements.botTest.addEventListener("click", () => (botTest ? stopBotTest("Bot test stopped.") : startBotTest()));
 elements.variantSelect.addEventListener("change", () => {
   try {
     localStorage.setItem(VARIANT_STORAGE, elements.variantSelect.value);
   } catch {
     // The ruleset still applies; it just won't be remembered.
   }
+  stopBotTest();
   updateAmericanCardVisibility();
   const untouched = game && game.winner === null && game.discards.length === 0 && !game.phase.startsWith("charleston") &&
     game.players.every((player) => player.melds.length === 0);

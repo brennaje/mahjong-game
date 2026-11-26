@@ -104,6 +104,7 @@ test("undoing a declared card win restores the score and hand", () => {
     PLAYER_NAMES: ["You", "Alex"], AmericanCard: {
       winningLines: () => [{ line: { value: 25 }, groups: [] }]
     },
+    cardWinningLines: () => context.AmericanCard.winningLines(),
     isWinningHand: () => true, recordHumanWin() {}, tileDescription: () => "tile",
     narrateTurn() {}, elements: { gameReview: {}, turnNarration: {}, turnMessage: {} }
   });

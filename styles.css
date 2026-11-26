@@ -153,6 +153,25 @@ h1 {
   padding: 10px 15px;
 }
 
+.bot-test-button {
+  background: transparent;
+  color: #f1dfad;
+}
+
+.bot-test-button:hover {
+  color: #24352e;
+}
+
+.bot-test-button[aria-pressed="true"] {
+  background: #b94a3e;
+  border-color: #b94a3e;
+  color: #fff;
+}
+
+body.bot-test-running #hand {
+  pointer-events: none;
+}
+
 .new-game-button:hover,
 .actions button:hover,
 .privacy-card button:hover {
@@ -857,31 +876,29 @@ h1 {
   margin: 6px 0 2px;
 }
 
-.card-target-banner .card-example {
-  margin-top: 0;
-  padding: 4px;
-  border-color: rgba(226, 199, 133, 0.55);
+#american-card-target-example {
+  padding: 5px 7px;
+  border: 1px solid rgba(226, 199, 133, 0.55);
+  border-radius: 7px;
   background: rgba(8, 39, 31, 0.55);
+  text-align: center;
 }
 
-.card-target-banner .card-example-label {
-  font-size: 0.72rem;
-  line-height: 1.2;
+.pattern-text-heading {
+  color: #e6ce91;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
-.card-target-banner .card-example-groups {
-  justify-content: center;
-  gap: 3px 4px;
-  margin-top: 3px;
-}
-
-/* One row when there is room; otherwise wrap whole groups, each sized to fit the center. */
-.card-target-banner .card-example-group .tile {
-  --tile-w: min(var(--example-cap, 28px), max(calc((100cqi - 12px) / var(--example-slots, 16)), min(calc((100cqi - 12px) / var(--example-max-group, 4) - 1px), var(--example-floor, 24px))));
-  width: var(--tile-w);
-  height: calc(var(--tile-w) * 1.38);
-  border-bottom-width: 2px;
-  font-size: calc(var(--tile-w) * 0.5);
+.pattern-text {
+  margin-top: 2px;
+  color: #fff8e6;
+  font-size: clamp(0.72rem, 5.5cqi, 1rem);
+  font-weight: 750;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .card-example-group .tile.card-missing {
@@ -889,14 +906,6 @@ h1 {
   filter: grayscale(0.7);
 }
 
-.card-example-group .tile.pattern-any {
-  display: inline-grid;
-  place-items: center;
-  border: 1px dashed rgba(226, 199, 133, 0.8);
-  background: rgba(255, 248, 230, 0.15);
-  color: #f3e3b5;
-  font-weight: 700;
-}
 
 .table-center.has-card-target .lantern {
   display: none;
@@ -1561,22 +1570,15 @@ body[data-layout="iphone"] .board-top-row {
 }
 
 body[data-layout="iphone"] .card-target-banner {
-  --example-cap: 20px;
-  --example-floor: 17px;
   margin: 2px 0;
 }
 
-body[data-layout="iphone"] .card-target-banner .card-example {
-  padding: 2px;
+body[data-layout="iphone"] #american-card-target-example {
+  padding: 3px 4px;
 }
 
-body[data-layout="iphone"] .card-target-banner .card-example-label {
-  font-size: 0.58rem;
-}
-
-body[data-layout="iphone"] .card-target-banner .card-example-groups {
-  gap: 2px;
-  margin-top: 2px;
+body[data-layout="iphone"] .pattern-text-heading {
+  font-size: 0.55rem;
 }
 
 body[data-layout="iphone"] .board:has(.table-center.has-card-target) {
