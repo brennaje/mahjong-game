@@ -788,6 +788,15 @@ h1 {
   color: #ffd2c9;
 }
 
+.card-target-banner {
+  margin-bottom: 12px;
+}
+
+.card-target-banner .card-example {
+  margin-top: 0;
+  background: rgba(8, 39, 31, 0.55);
+}
+
 .tile.wall-tile {
   width: 31.5px;
   height: 42.75px;
@@ -970,22 +979,26 @@ h1 {
 
 .hand button.tile {
   cursor: grab;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .hand button.tile:active {
   cursor: grabbing;
 }
 
-.hand button.tile:disabled {
-  cursor: default;
-}
-
-.hand button.tile:disabled:hover {
+.hand button.tile[aria-disabled="true"]:hover {
   transform: none;
 }
 
 .hand button.tile.dragging {
-  opacity: 0.5;
+  z-index: 5;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.45);
+  cursor: grabbing;
+  opacity: 0.9;
+  pointer-events: none;
 }
 
 .tile {
@@ -1421,6 +1434,28 @@ body[data-layout="iphone"] .board-top-row {
   padding: 3px 6px;
 }
 
+body[data-layout="iphone"] .card-target-banner {
+  margin-bottom: 4px;
+}
+
+body[data-layout="iphone"] .card-target-banner .card-example {
+  padding: 3px 5px;
+}
+
+body[data-layout="iphone"] .card-target-banner .card-example-label {
+  font-size: 0.66rem;
+}
+
+body[data-layout="iphone"] .card-target-banner .card-example-groups {
+  gap: 3px;
+  margin-top: 2px;
+}
+
+body[data-layout="iphone"] .card-target-banner .card-example-group .tile {
+  width: 20px;
+  height: 28px;
+}
+
 body[data-layout="iphone"] .phone-discard-label {
   display: block;
   color: #e7dcc0;
@@ -1480,14 +1515,57 @@ body[data-layout="iphone"] .turn-message {
 }
 
 body[data-layout="iphone"] .hand {
+  --hand-rows: 2;
+  container-type: inline-size;
   gap: 3px;
   min-height: 0;
 }
 
+/* Size each tile from the hand's tile count so every hand fits its row budget. */
 body[data-layout="iphone"] .hand button.tile {
-  width: clamp(40px, 11vw, 46px);
-  height: 58px;
-  font-size: 1.45rem;
+  --tile-w: min(46px, calc(100cqi / round(up, var(--hand-slots, 14) / var(--hand-rows), 1) - 3px));
+  width: var(--tile-w);
+  height: calc(var(--tile-w) * 1.32);
+  font-size: calc(var(--tile-w) * 0.52);
+}
+
+body[data-layout="iphone"].phone-bots .player:not(.player-bottom) .player-hand {
+  --hand-rows: 3;
+  container-type: inline-size;
+  gap: 1px;
+  width: 100%;
+}
+
+body[data-layout="iphone"].phone-bots #player-2 .player-hand {
+  --hand-rows: 1;
+}
+
+body[data-layout="iphone"].phone-bots .player:not(.player-bottom) .player-hand .tile {
+  --tile-w: min(30px, calc(100cqi / round(up, var(--hand-slots, 14) / var(--hand-rows), 1) - 2px));
+  width: var(--tile-w);
+  height: calc(var(--tile-w) * 1.36);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  font-size: calc(var(--tile-w) * 0.5);
+}
+
+body[data-layout="iphone"].phone-bots .player:not(.player-bottom) .player-meld {
+  margin-left: 1px;
+  padding-left: 2px;
+}
+
+body[data-layout="iphone"].phone-bots .player:not(.player-bottom) .winning-group {
+  margin: 0;
+  padding: 1px;
+  border-width: 1px;
+}
+
+body[data-layout="iphone"].phone-bots .board {
+  grid-template-columns: minmax(0, 1fr) 62px minmax(0, 1fr);
+}
+
+body[data-layout="iphone"].phone-bots .player:not(.player-bottom) .player-info {
+  line-height: 1.1;
 }
 
 body[data-layout="iphone"] .actions {
@@ -1616,8 +1694,38 @@ body[data-layout="iphone"] .undo-status {
     margin-bottom: 0;
   }
 
+  body[data-layout="iphone"] .hand {
+    --hand-rows: 1;
+  }
+
   body[data-layout="iphone"] .hand button.tile {
-    width: clamp(38px, 6.2vw, 46px);
-    height: 58px;
+    --tile-w: min(40px, calc(100cqi / round(up, var(--hand-slots, 14) / var(--hand-rows), 1) - 2px));
+  }
+
+  body[data-layout="iphone"].phone-bots .player:not(.player-bottom) .player-hand .tile {
+    --tile-w: min(26px, calc(100cqi / round(up, var(--hand-slots, 14) / var(--hand-rows), 1) - 2px));
+  }
+
+  body[data-layout="iphone"].phone-bots .player:not(.player-bottom) .player-hand {
+    --hand-rows: 2;
+  }
+
+  body[data-layout="iphone"].phone-bots #player-2 .player-hand {
+    --hand-rows: 1;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  body[data-layout="iphone"].phone-bots #player-2 {
+    flex-wrap: nowrap;
+  }
+
+  body[data-layout="iphone"].phone-bots #player-2 .player-header {
+    flex-direction: column;
+    flex: 0 0 auto;
+  }
+
+  body[data-layout="iphone"].phone-bots .board {
+    grid-template-columns: minmax(0, 1fr) minmax(96px, 0.6fr) minmax(0, 1fr);
   }
 }

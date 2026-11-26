@@ -72,6 +72,7 @@ const elements = {
   americanCardSource: document.querySelector("#american-card-source"),
   americanCardTarget: document.querySelector("#american-card-target"),
   americanCardTargetExample: document.querySelector("#american-card-target-example"),
+  cardTargetBanner: document.querySelector("#card-target-banner"),
   saveAmericanCard: document.querySelector("#save-american-card"),
   deleteAmericanCard: document.querySelector("#delete-american-card"),
   discardPile: document.querySelector("#discard-pile"),
@@ -129,7 +130,8 @@ let botTimer = null;
 let activeNarrationUtterance = null;
 let activeNarrationPlayerIndex = null;
 let humanHandOrder = [];
-let draggedHandTileId = null;
+let handDrag = null;
+let suppressHandClick = false;
 let pendingTileAnimations = [];
 let readyTileAnimations = [];
 const heldTileGhosts = new Map();
@@ -292,7 +294,7 @@ function newGame(dealer = null, handNumber = 1, variantId = elements.variantSele
   undoState = null;
   undoContinuation = null;
   humanHandOrder = [];
-  draggedHandTileId = null;
+  handDrag = null;
   if (botTimer !== null) {
     clearTimeout(botTimer);
     botTimer = null;
@@ -1555,6 +1557,11 @@ function renderPlayers() {
       }
       tiles.append(flowers);
     }
+    const groupCount = tiles.querySelectorAll(".player-meld, .winning-group").length;
+    tiles.style.setProperty(
+      "--hand-slots",
+      String(Math.max(tiles.querySelectorAll(".tile").length + Math.ceil(groupCount / 2), 1))
+    );
     content.append(header, info, tiles);
   }
 }
@@ -1590,28 +1597,31 @@ function renderHand(recommendation) {
     ? "Choose Deal tiles to deal the hands and begin the Charleston."
     : game.phase === "charleston"
     ? "Select up to three non-joker tiles to pass. On the final pass, you may blind pass tiles received from another player."
-    : "Click Draw when it is your turn to draw, then click a tile to discard. Drag tiles to arrange them; use Alt+Left/Right when a tile is focused.";
+    : "Click Draw when it is your turn to draw, then click a tile to discard. Drag tiles at any time to arrange them; use Alt+Left/Right when a tile is focused.";
   if (game.privacyRequired || game.winner === 0) {
     return;
   }
   const player = game.players[0];
-  for (const tile of orderedHumanHand(player.hand)) {
+  const tiles = orderedHumanHand(player.hand);
+  elements.hand.style.setProperty("--hand-slots", String(Math.max(tiles.length, 1)));
+  for (const tile of tiles) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `tile ${tileClass(tile)}`;
     const canDiscard = game.current === 0 && game.winner === null && game.phase === "discard";
     const canSelect = game.current === 0 && game.winner === null &&
       game.phase === "charleston" && tile.type !== "joker";
-    button.disabled = !canDiscard && !canSelect;
-    button.draggable = canDiscard;
-    if (canDiscard) {
-      button.setAttribute("aria-describedby", "hand-help");
-      button.setAttribute("aria-keyshortcuts", "Alt+ArrowLeft Alt+ArrowRight");
-      button.setAttribute(
-        "aria-description",
-        "Drag to reorder, or press Alt+Left or Alt+Right to move this tile. Click to discard."
-      );
+    if (!canDiscard && !canSelect) {
+      button.setAttribute("aria-disabled", "true");
     }
+    button.setAttribute("aria-describedby", "hand-help");
+    button.setAttribute("aria-keyshortcuts", "Alt+ArrowLeft Alt+ArrowRight");
+    button.setAttribute(
+      "aria-description",
+      canDiscard
+        ? "Drag to reorder, or press Alt+Left or Alt+Right to move this tile. Click to discard."
+        : "Drag to reorder, or press Alt+Left or Alt+Right to move this tile."
+    );
     if (recommendation?.tile?.id === tile.id) {
       button.classList.add("recommended");
     }
@@ -1633,7 +1643,7 @@ function renderHand(recommendation) {
     button.addEventListener("click", () => {
       if (canSelect) {
         selectCharlestonTile(tile.id);
-      } else {
+      } else if (canDiscard) {
         discardTile(tile.id);
       }
     });
@@ -3546,61 +3556,99 @@ function updateTurnMessage() {
   }
 }
 
-elements.hand.addEventListener("dragstart", (event) => {
-  const button = event.target.closest("button[data-tile-id]");
-  if (!button || !button.draggable) {
-    return;
-  }
-  draggedHandTileId = Number(button.dataset.tileId);
-  button.classList.add("dragging");
-  event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("text/plain", String(draggedHandTileId));
-});
-elements.hand.addEventListener("dragover", (event) => {
-  if (draggedHandTileId === null) {
-    return;
-  }
-  const target = event.target.closest("button[data-tile-id]");
-  if (!target || Number(target.dataset.tileId) === draggedHandTileId) {
-    return;
-  }
-  event.preventDefault();
-  event.dataTransfer.dropEffect = "move";
-});
-elements.hand.addEventListener("drop", (event) => {
-  const target = event.target.closest("button[data-tile-id]");
-  const rawDraggedId = event.dataTransfer.getData("text/plain");
-  const draggedId = rawDraggedId === "" ? draggedHandTileId : Number(rawDraggedId);
-  if (!target || !Number.isInteger(draggedId) ||
-      draggedHandTileId === null || draggedHandTileId !== draggedId ||
-      Number(target.dataset.tileId) === draggedId) {
-    return;
-  }
-  const source = Array.from(
-    elements.hand.querySelectorAll("button[data-tile-id]")
-  ).find((button) => Number(button.dataset.tileId) === draggedId);
+/** Returns the rendered hand button for a tile, if it is still in the hand. */
+function handTileButton(tileId) {
+  return Array.from(elements.hand.querySelectorAll("button[data-tile-id]"))
+    .find((button) => Number(button.dataset.tileId) === tileId) ?? null;
+}
+
+/** Moves the dragged hand tile beside the tile under the pointer and keeps it under the pointer. */
+function updateHandDrag(event) {
+  const source = handTileButton(handDrag.tileId);
   if (!source) {
     return;
   }
-  event.preventDefault();
-  const targetRect = target.getBoundingClientRect();
-  const insertAfter = event.clientX > targetRect.left + targetRect.width / 2;
-  elements.hand.insertBefore(source, insertAfter ? target.nextElementSibling : target);
-  source.classList.remove("dragging");
+  source.classList.add("dragging");
+  const target = document.elementFromPoint(event.clientX, event.clientY)
+    ?.closest("#hand button[data-tile-id]");
+  if (target && target !== source) {
+    const rect = target.getBoundingClientRect();
+    const insertAfter = event.clientX > rect.left + rect.width / 2;
+    elements.hand.insertBefore(source, insertAfter ? target.nextElementSibling : target);
+    saveHumanHandOrderFromDOM();
+  }
+  source.style.transform = "";
+  const home = source.getBoundingClientRect();
+  source.style.transform = `translate(${event.clientX - handDrag.grabX - home.left}px, ${
+    event.clientY - handDrag.grabY - home.top}px)`;
+}
+
+/** Ends a hand drag, leaving the tile in its new position. */
+function finishHandDrag(event) {
+  if (!handDrag || handDrag.pointerId !== event.pointerId) {
+    return;
+  }
+  const { active, tileId } = handDrag;
+  handDrag = null;
+  if (!active) {
+    return;
+  }
+  const source = handTileButton(tileId);
+  source?.classList.remove("dragging");
+  if (source) {
+    source.style.transform = "";
+  }
   saveHumanHandOrderFromDOM();
-  source.focus();
-});
-elements.hand.addEventListener("dragend", (event) => {
+  suppressHandClick = true;
+  setTimeout(() => {
+    suppressHandClick = false;
+  }, 0);
+  source?.focus({ preventScroll: true });
+}
+
+elements.hand.addEventListener("pointerdown", (event) => {
   const button = event.target.closest("button[data-tile-id]");
-  button?.classList.remove("dragging");
-  draggedHandTileId = null;
+  if (!button || !event.isPrimary || event.button !== 0) {
+    return;
+  }
+  const rect = button.getBoundingClientRect();
+  handDrag = {
+    tileId: Number(button.dataset.tileId),
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    grabX: event.clientX - rect.left,
+    grabY: event.clientY - rect.top,
+    active: false
+  };
 });
-elements.hand.addEventListener("keydown", (event) => {
+window.addEventListener("pointermove", (event) => {
+  if (!handDrag || handDrag.pointerId !== event.pointerId) {
+    return;
+  }
+  if (!handDrag.active) {
+    if (Math.hypot(event.clientX - handDrag.startX, event.clientY - handDrag.startY) < 6) {
+      return;
+    }
+    handDrag.active = true;
+  }
+  event.preventDefault();
+  updateHandDrag(event);
+});
+window.addEventListener("pointerup", finishHandDrag);
+window.addEventListener("pointercancel", finishHandDrag);
+elements.hand.addEventListener("click", (event) => {
+  if (suppressHandClick) {
+    suppressHandClick = false;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+}, true);elements.hand.addEventListener("keydown", (event) => {
   if (!event.altKey || !["ArrowLeft", "ArrowRight"].includes(event.key)) {
     return;
   }
   const button = event.target.closest("button[data-tile-id]");
-  if (!button || button.disabled) {
+  if (!button) {
     return;
   }
   event.preventDefault();
@@ -3669,18 +3717,22 @@ function renderAmericanCardTarget() {
       source === "private" ? savedAmericanCard?.[index] : null;
   if (!line) {
     elements.americanCardTargetExample.replaceChildren();
+    elements.cardTargetBanner.hidden = true;
     return;
   }
   const name = elements.americanCardTarget.selectedOptions[0].textContent;
   const score = source === "private" ? "" : ` · ${line.value} points`;
   const label = `${name}${score} · ${line.concealed ? "Concealed" : "Exposable"} · one possible variation`;
   elements.americanCardTargetExample.replaceChildren(makeCardExample(line, label));
+  elements.cardTargetBanner.hidden = false;
 }
 
 function updateAmericanCardTargets() {
   const source = elements.americanCardSource.value;
   const previous = elements.americanCardTarget.value;
-  const options = [];
+  const options = source === "none" || (source === "private" && !savedAmericanCard)
+    ? []
+    : [new Option("No example", "")];
   if (source === "supplied") {
     suppliedAmericanPatterns.patterns.forEach((pattern, index) => {
       options.push(new Option(pattern.name, String(index)));
@@ -3705,6 +3757,14 @@ function updateAmericanCardTargets() {
     elements.americanCardTarget.value = previous;
   }
   elements.americanCardTarget.disabled = source === "none" || (source === "private" && !savedAmericanCard);
+  renderAmericanCardTarget();
+}
+
+/** Shows the first combination on the chosen card, if any. */
+function selectFirstAmericanCardTarget() {
+  if ([...elements.americanCardTarget.options].some((option) => option.value === "0")) {
+    elements.americanCardTarget.value = "0";
+  }
   renderAmericanCardTarget();
 }
 
@@ -3744,8 +3804,13 @@ elements.saveAmericanCard.addEventListener("click", () => {
     savedAmericanCard = parsed;
     clearTimeout(americanCardPreviewTimer);
     renderAmericanCardPreview();
+    const target = elements.americanCardSource.value === "private" ? elements.americanCardTarget.value : "";
+    elements.americanCardSource.value = "private";
     updateAmericanCardTargets();
-    elements.americanCardStatus.textContent = `Saved ${parsed.length} combinations on this device. Changes apply to the next hand.`;
+    if (target === "" || Number(target) >= parsed.length) {
+      selectFirstAmericanCardTarget();
+    }
+    elements.americanCardStatus.textContent = `Saved ${parsed.length} combinations on this device and selected the saved private card. Changes apply to the next hand.`;
   } catch (error) {
     elements.americanCardStatus.textContent = `Card not saved: ${error.message}`;
   }
@@ -3766,6 +3831,7 @@ elements.deleteAmericanCard.addEventListener("click", () => {
 elements.americanCardSource.addEventListener("change", () => {
   elements.americanCardTarget.value = "";
   updateAmericanCardTargets();
+  selectFirstAmericanCardTarget();
 });
 elements.americanCardTarget.addEventListener("change", renderAmericanCardTarget);
 elements.layoutSelect.addEventListener("change", () => {

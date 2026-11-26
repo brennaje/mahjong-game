@@ -120,31 +120,45 @@ test("provided card scores accumulate the highest matching value without chargin
   assert.match(game.scoreSummary, /\+45 points/);
 });
 
-test("the human hand remains visible but cannot be discarded during another player's turn", () => {
+test("the human hand remains visible and reorderable but cannot be discarded during another player's turn", () => {
   const hand = [{ id: 1, type: "characters", value: 3 }];
   const controls = [];
+  const discarded = [];
   const game = {
     privacyRequired: false, current: 1, winner: null, phase: "discard",
     players: [{ hand }], charlestonSelection: []
   };
   const context = vm.createContext({
     game, elements: {
-      hand: { replaceChildren() { controls.length = 0; }, append(button) { controls.push(button); } },
+      hand: {
+        style: { setProperty() {} },
+        replaceChildren() { controls.length = 0; },
+        append(button) { controls.push(button); }
+      },
       handHelp: {}
     },
-    document: { createElement: () => ({
-      dataset: {}, classList: { add() {} }, setAttribute() {}, addEventListener() {}
-    }) },
+    document: { createElement: () => {
+      const attributes = {};
+      return {
+        dataset: {}, classList: { add() {} }, attributes,
+        setAttribute(name, value) { attributes[name] = value; },
+        addEventListener(type, listener) { this[`on${type}`] = listener; }
+      };
+    } },
     orderedHumanHand: (tiles) => tiles,
+    discardTile: (tileId) => discarded.push(tileId),
     tileClass: () => "characters", tileDescription: () => "3 Crak", renderTileFace() {}
   });
   implementation("function renderHand(", "/** Returns the human's hand", context);
   context.renderHand(null);
   assert.equal(controls.length, 1);
-  assert.equal(controls[0].disabled, true);
-  assert.equal(controls[0].draggable, false);
+  assert.equal(controls[0].disabled, undefined);
+  assert.equal(controls[0].attributes["aria-disabled"], "true");
+  controls[0].onclick();
+  assert.deepEqual(discarded, []);
   game.current = 0;
   context.renderHand(null);
-  assert.equal(controls[0].disabled, false);
-  assert.equal(controls[0].draggable, true);
+  assert.equal(controls[0].attributes["aria-disabled"], undefined);
+  controls[0].onclick();
+  assert.deepEqual(discarded, [1]);
 });

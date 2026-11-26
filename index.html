@@ -65,8 +65,11 @@
           </select>
         </label>
       </div>
-      <p>The example is a visual target only; all available combinations on the chosen card remain playable. Card selection applies to the next hand.</p>
+      <p>The selected combination is shown at the top of the game as a visual target only; all available combinations on the chosen card remain playable. Card selection applies to the next hand.</p>
       <p>Provided patterns use a one-point base: the winner earns the listed points, without deductions, and scores accumulate across hands. These X patterns are treated as exposable. Incomplete or ambiguous patterns are unavailable; this is not an official card.</p>
+    </section>
+
+    <section class="card-target-banner" id="card-target-banner" aria-label="Selected American combination" hidden>
       <div id="american-card-target-example" aria-live="polite"></div>
     </section>
 
@@ -175,7 +178,7 @@
             </div>
             <div class="tutor-note" id="tutor-note" role="status" aria-live="polite"></div>
             <div class="melds" id="melds"></div>
-            <p class="hand-help" id="hand-help">Click Draw when it is your turn to draw, then click a tile to discard. Drag tiles to arrange them; use Alt+Left/Right when a tile is focused.</p>
+            <p class="hand-help" id="hand-help">Click Draw when it is your turn to draw, then click a tile to discard. Drag tiles at any time to arrange them; use Alt+Left/Right when a tile is focused.</p>
             <div class="hand" id="hand" aria-label="Your tiles" aria-describedby="hand-help"></div>
             <div class="actions" id="actions"></div>
             <section class="game-review" id="game-review" aria-labelledby="game-review-title" hidden>
