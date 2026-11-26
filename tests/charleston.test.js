@@ -31,6 +31,10 @@ function setup() {
     speechAvailable: false,
     elements: { turnNarration: { textContent: "" } },
     tileKeepValue: (tile) => tile.id,
+    botCharlestonPass: (index) => game.players[index].hand
+      .filter((tile) => tile.type !== "joker")
+      .sort((a, b) => a.id - b.id)
+      .slice(0, 3),
     render() {},
     narrateTurn() {},
     scheduleBotTurn() {}

@@ -9,7 +9,12 @@ const PLAYER_NAMES = ["You", "Alex", "Jordan", "Morgan"];
 const playerScores = PLAYER_NAMES.map(() => 0);
 const americanCardScores = PLAYER_NAMES.map(() => 0);
 const AMERICAN_CARD_STORAGE = "mahjong-game-american-card-v1";
+const AMERICAN_LIBRARY_STORAGE = "mahjong-game-american-cards-v2";
+const AMERICAN_LIBRARY_FORMAT = "mahjong-american-card-library";
+const BUILT_IN_CARD_ID = "card-2026";
+const NO_CARD_ID = "none";
 const LAYOUT_STORAGE = "mahjong-game-layout-v1";
+const VARIANT_STORAGE = "mahjong-game-variant-v1";
 const TILE_TYPE_ORDER = ["characters", "circles", "bamboo", "wind", "dragon", "flower", "joker"];
 const VARIANTS = {
   "chinese-classical": {
@@ -73,8 +78,16 @@ const elements = {
   americanCardTarget: document.querySelector("#american-card-target"),
   americanCardTargetExample: document.querySelector("#american-card-target-example"),
   cardTargetBanner: document.querySelector("#card-target-banner"),
+  americanCardName: document.querySelector("#american-card-name"),
+  americanCardPanel: document.querySelector("#card-target"),
+  americanCardEditor: document.querySelector("#card-entry"),
+  americanCardPhoneButton: document.querySelector('[data-phone-panel="card"]'),
   saveAmericanCard: document.querySelector("#save-american-card"),
+  copyAmericanCard: document.querySelector("#copy-american-card"),
+  restoreAmericanCard: document.querySelector("#restore-american-card"),
   deleteAmericanCard: document.querySelector("#delete-american-card"),
+  exportAmericanCard: document.querySelector("#export-american-card"),
+  importAmericanCard: document.querySelector("#import-american-card"),
   discardPile: document.querySelector("#discard-pile"),
   diceResults: document.querySelector("#dice-results"),
   hand: document.querySelector("#hand"),
@@ -121,11 +134,10 @@ const playerAreas = PLAYER_NAMES.map((_, index) =>
 );
 
 let game;
-let savedAmericanCard = null;
+let cardLibrary = null;
+const parsedCardTexts = new Map();
 let undoState = null;
 let undoContinuation = null;
-const suppliedAmericanPatterns = AmericanCard.suppliedPatterns();
-const suppliedAmericanCard = suppliedAmericanPatterns.patterns.flatMap((pattern) => pattern.lines);
 let botTimer = null;
 let activeNarrationUtterance = null;
 let activeNarrationPlayerIndex = null;
@@ -282,15 +294,19 @@ function wallPosition(side, dealer, stack) {
 /** Resets the table, deals a hand, and starts the dealer's turn. */
 function newGame(dealer = null, handNumber = 1, variantId = elements.variantSelect.value) {
   const activeVariantId = VARIANTS[variantId] ? variantId : "chinese-classical";
-  const cardSource = activeVariantId === "american" ? elements.americanCardSource.value : "none";
-  const card = cardSource === "private" ? savedAmericanCard :
-    cardSource === "supplied" ? suppliedAmericanCard : null;
-  if (cardSource === "private" && !card) {
-    elements.americanCardStatus.textContent = "Save a valid card before starting a card-based American hand.";
-    elements.americanCardText.closest("details").open = true;
-    setPhonePanel("card", true);
-    return;
+  const libraryCard = activeVariantId === "american" ? selectedLibraryCard() : null;
+  let card = null;
+  if (libraryCard) {
+    try {
+      card = libraryCardLines(libraryCard);
+    } catch (error) {
+      elements.americanCardStatus.textContent = `"${libraryCard.name}" cannot be played until it is fixed: ${error.message}`;
+      elements.americanCardEditor.open = true;
+      setPhonePanel("card", true);
+      return;
+    }
   }
+  const cardSource = !card ? "none" : libraryCard.builtIn ? "supplied" : "private";
   undoState = null;
   undoContinuation = null;
   humanHandOrder = [];
@@ -352,6 +368,7 @@ function newGame(dealer = null, handNumber = 1, variantId = elements.variantSele
     wallBreak,
     card,
     cardSource,
+    cardName: libraryCard?.name ?? "",
     scoreSummary: "",
     discards: [],
     dealer,
@@ -489,12 +506,7 @@ function passCharleston(blind = false) {
     if (index === 0) {
       return selectedIds.map((id) => player.hand.find((tile) => tile.id === id));
     }
-    return player.hand
-      .filter((tile) => tile.type !== "joker")
-      .map((tile) => ({ tile, value: tileKeepValue(tile, player.hand) }))
-      .sort((a, b) => a.value - b.value || a.tile.sort - b.tile.sort)
-      .slice(0, 3)
-      .map(({ tile }) => tile);
+    return botCharlestonPass(index);
   });
   if (outgoing.some((tiles, index) =>
     tiles.some((tile) => !tile || tile.type === "joker") ||
@@ -962,6 +974,7 @@ function render() {
   renderMelds();
   renderActions();
   renderTutor(recommendation);
+  updateAmericanCardTargets();
   elements.roundLabel.textContent =
     `Hand ${game.handNumber} · Dealer: ${game.players[game.dealer].name} · ${VARIANTS[game.variantId].label}`;
   renderWall();
@@ -1389,6 +1402,25 @@ function clearTileAnimationGhosts() {
 
 /** Returns the player's discard advice when the current state allows it. */
 function getTutorRecommendation() {
+  if (elements.tutorEnabled.checked && game.card && game.winner === null && !game.privacyRequired &&
+      game.phase === "charleston") {
+    const advice = recommendAmericanTiles(game.players[0], 3);
+    return advice && {
+      ...advice,
+      tile: null,
+      passTiles: advice.tiles,
+      explanation: `Suggested pass: ${advice.tiles.map((tile) => tileDescription(tile)).join(", ")}. ${advice.explanation}`
+    };
+  }
+  if (elements.tutorEnabled.checked && !game.card && game.winner === null && !game.privacyRequired &&
+      game.phase === "charleston") {
+    const tiles = botCharlestonPass(0);
+    return tiles.length === 3 && {
+      tile: null,
+      passTiles: tiles,
+      explanation: `Suggested pass: ${tiles.map((tile) => tileDescription(tile)).join(", ")}. They fit your pattern to win (matching sets and a pair, shown in the center) the least. Keep jokers for sets.`
+    };
+  }
   if (!elements.tutorEnabled.checked || game.current !== 0 || game.privacyRequired || game.winner !== null ||
       game.phase !== "discard") {
     return null;
@@ -1400,11 +1432,23 @@ function getTutorRecommendation() {
       explanation: "Your hand is complete. Declare win instead of discarding."
     };
   }
-  const recommendation = recommendDiscard(player);
-  if (game.card && recommendation) {
-    recommendation.explanation = "This suggestion is not card-aware; compare it with your saved combinations.";
+  if (game.card) {
+    const advice = recommendAmericanTiles(player, 1);
+    const exchange = findAmericanJokerExchanges(0).find((candidate) => {
+      const group = advice?.best.groups.find((item) =>
+        item.tiles.some((tile) => tile.id === candidate.tileId));
+      return !group || group.size >= 3;
+    });
+    if (advice && exchange) {
+      const natural = player.hand.find((tile) => tile.id === exchange.tileId);
+      advice.explanation += ` Joker exchange: swap your ${tileDescription(natural)} for the exposed joker first — a joker can fill any group of three or more.`;
+    }
+    return advice ?? {
+      tile: null,
+      explanation: "Your exposures no longer fit any card line. Discard tiles you can't use and play defensively."
+    };
   }
-  return recommendation;
+  return plannedDiscardAdvice(player) ?? recommendDiscard(player);
 }
 
 /** Displays tutor advice, claim choices, and the current hand outcome. */
@@ -1417,6 +1461,13 @@ function renderTutor(recommendation) {
     elements.tutorNote.textContent = `${game.players[game.winner].name} won. Start the next hand when ready.`;
     return;
   }
+  if (game.phase === "charleston-choice" && game.card) {
+    const best = rankAmericanLines(game.players[0].hand, game.players[0].melds, chosenAmericanPattern())[0];
+    elements.tutorNote.textContent = best && best.need <= 5
+      ? `You are ${best.need} tiles from ${americanLineName(best.line)}. Stopping keeps your hand intact.`
+      : "Your hand is still far from any card line. Continuing the Charleston gives you more chances to reshape it.";
+    return;
+  }
   if (game.current !== 0) {
     return;
   }
@@ -1424,9 +1475,14 @@ function renderTutor(recommendation) {
     const options = game.claimQueue[game.claimIndex]?.options ?? [];
     if (options.some((option) => option.type === "win")) {
       elements.tutorNote.textContent = "You can win on this discard. Choose Win to end the hand.";
+    } else if (game.card && game.pendingDiscard) {
+      elements.tutorNote.textContent = americanClaimAdvice(game.players[0], options, game.pendingDiscard.tile);
     } else {
       const available = options.map(claimLabel).join(", ");
-      elements.tutorNote.textContent = `Available claim${options.length === 1 ? "" : "s"}: ${available}. Claim only if it improves your hand; otherwise choose Pass.`;
+      const choice = chooseStandardClaim(0, options);
+      elements.tutorNote.textContent = choice
+        ? `Claim ${claimLabel(choice.option)}: it brings you from ${choice.before} to ${choice.need} tile${choice.need === 1 ? "" : "s"} away from your pattern to win.`
+        : `Available claim${options.length === 1 ? "" : "s"}: ${available}. Pass: claiming would not bring you closer to your pattern to win${game.variantId === "japanese-riichi" ? ", or would leave an open hand without a yaku" : ""}.`;
     }
     return;
   }
@@ -1627,6 +1683,8 @@ function renderHand(recommendation) {
     }
     if (canSelect && game.charlestonSelection.includes(tile.id)) {
       button.classList.add("recommended");
+    } else if (canSelect && recommendation?.passTiles?.some((candidate) => candidate.id === tile.id)) {
+      button.classList.add("suggested-pass");
     }
     renderTileFace(button, tile);
     button.title = canDiscard ? `Discard ${tileDescription(tile)}` :
@@ -2824,6 +2882,300 @@ function hasOpenMelds(player) {
   return player.melds.some((meld) => !meld.concealed);
 }
 
+let americanKeyNames = null;
+
+/** Names an American card tile key such as "bamboo-4" or "flower-0". */
+function americanKeyName(tileKey) {
+  if (!americanKeyNames) {
+    americanKeyNames = new Map();
+    for (const tile of createTiles("american")) {
+      if (tile.type !== "joker" && !americanKeyNames.has(AmericanCard.key(tile))) {
+        americanKeyNames.set(AmericanCard.key(tile), tileDescription(tile, "american"));
+      }
+    }
+    americanKeyNames.set("flower-0", "Flower");
+  }
+  return americanKeyNames.get(tileKey) ?? tileKey;
+}
+
+/** Names a card line by its pattern name, or by its line in the card text. */
+function americanLineName(line) {
+  return line.name ?? (line.pattern ? `Line ${line.pattern}` : "Card line");
+}
+
+/** Returns the pattern chosen in the target menu, or null for "Closest to my hand" and "No example". */
+function chosenAmericanPattern() {
+  const value = elements.americanCardTarget.value;
+  return value === "" || value === "auto" ? null : Number(value);
+}
+
+/** Ranks the active card's lines by how few tiles a player still needs, focusing on a chosen pattern when it still fits. */
+function rankAmericanLines(hand, melds, pattern = null) {
+  if (!game.card) return [];
+  const ranked = game.card
+    .map((line) => AmericanCard.progress(line, hand, melds))
+    .filter(Boolean)
+    .sort((a, b) => a.need - b.need || b.line.value - a.line.value);
+  const focused = pattern === null ? [] : ranked.filter((entry) => entry.line.pattern === pattern);
+  return focused.length ? focused : ranked;
+}
+
+/** Lists the tiles still missing from a line, such as "2 × 4 Bamboo". */
+function describeAmericanNeeds(progress) {
+  return progress.groups
+    .filter((group) => !group.exposed && group.tiles.length < group.size)
+    .map((group) => `${group.size - group.tiles.length} × ${americanKeyName(group.key)}${group.size < 3 ? " (no jokers)" : ""}`)
+    .join(", ");
+}
+
+/** The pattern a player aims for: your chosen target, or each bot's own closest line. */
+function americanFocusFor(player) {
+  return player === game.players[0] ? chosenAmericanPattern() : null;
+}
+
+/** Picks the tiles least useful to the closest card lines for a discard or pass. */
+function recommendAmericanTiles(player, count) {
+  const ranked = rankAmericanLines(player.hand, player.melds, americanFocusFor(player));
+  if (!ranked.length) return null;
+  const best = ranked[0];
+  const close = ranked.filter((entry) => entry.need <= best.need + 2).slice(0, 8);
+  const candidates = player.hand
+    .filter((tile) => tile.type !== "joker")
+    .map((tile) => ({
+      tile,
+      score: close.reduce((sum, entry) =>
+        sum + (entry.keep.has(tile.id) ? (entry === best ? 4 : 1) / (1 + entry.need - best.need) : 0), 0)
+    }))
+    .sort((a, b) => a.score - b.score ||
+      tileKeepValue(a.tile, player.hand) - tileKeepValue(b.tile, player.hand) ||
+      a.tile.sort - b.tile.sort || a.tile.id - b.tile.id);
+  const tiles = candidates.slice(0, count).map((candidate) => candidate.tile);
+  const bestName = americanLineName(best.line);
+  const otherNames = new Map();
+  for (const entry of ranked) {
+    const name = americanLineName(entry.line);
+    if (entry.need > best.need + 2 || otherNames.size >= 2) break;
+    if (name !== bestName && !otherNames.has(name)) otherNames.set(name, entry.need);
+  }
+  const others = [...otherNames].map(([name, need]) => `${name} (${need} away)`);
+  const target = `Target: ${bestName}, ${best.line.value} points${best.line.concealed ? ", concealed — don't expose" : ""}. ` +
+    (best.need === 0 ? "Your hand matches it." : `You need ${best.need} more tile${best.need === 1 ? "" : "s"}: ${describeAmericanNeeds(best)}.`);
+  const unused = tiles.filter((tile) => !best.keep.has(tile.id));
+  const reason = !tiles.length ? "" : unused.length === tiles.length
+    ? `${tiles.length === 1 ? "It isn't" : "They aren't"} part of that target.`
+    : "Every tile helps the target, so this gives up the least.";
+  return {
+    tile: tiles[0] ?? null,
+    tiles,
+    best,
+    explanation: `${reason} ${target}${others.length ? ` Also close: ${others.join("; ")}.` : ""} Keep jokers for groups of three or more; they can't fill pairs or singles.`.trim()
+  };
+}
+
+/** Finds the claim that brings a player closest to a card line, with the before and after progress. */
+function americanClaimChoice(player, options, discardTile) {
+  const focus = americanFocusFor(player);
+  const before = rankAmericanLines(player.hand, player.melds, focus)[0];
+  let bestClaim = null;
+  for (const option of options) {
+    if (option.type === "win") continue;
+    const used = new Set(option.tiles.map((tile) => tile.id));
+    const melds = [...player.melds, { tiles: [...option.tiles, discardTile], targetKey: option.targetKey }];
+    const after = rankAmericanLines(player.hand.filter((tile) => !used.has(tile.id)), melds, focus)[0];
+    if (after && (!bestClaim || after.need < bestClaim.after.need)) bestClaim = { option, after };
+  }
+  const helps = Boolean(bestClaim && before && bestClaim.after.need < before.need);
+  return { before, bestClaim, helps, worth: helps && bestClaim.after.need <= 6 };
+}
+
+/** Explains whether a claim moves the player closer to a card line. */
+function americanClaimAdvice(player, options, discardTile) {
+  const { before, bestClaim, helps } = americanClaimChoice(player, options, discardTile);
+  if (!helps) {
+    const target = before ? ` Your closest target is ${americanLineName(before.line)}${before.line.concealed ? " (concealed)" : ""}.` : "";
+    return `Pass: exposing this ${tileDescription(discardTile)} would not help your closest combinations.${target}`;
+  }
+  const { option, after } = bestClaim;
+  if (after.need > 6) {
+    return `Pass: claiming fits ${americanLineName(after.line)}, but you would still be ${after.need} tiles away. Exposing this early locks in your hand; wait until you're closer.`;
+  }
+  return `Claim ${claimLabel(option)}: it fits ${americanLineName(after.line)} and leaves you ${after.need} tile${after.need === 1 ? "" : "s"} away. Exposed groups lock you into exposable lines with that group.`;
+}
+
+const tileTotalsByVariant = new Map();
+
+/** Counts every copy of each tile key in a ruleset's set, with one sample tile per key. */
+function tileTotals(variantId) {
+  if (!tileTotalsByVariant.has(variantId)) {
+    const counts = new Map();
+    const samples = new Map();
+    for (const tile of createTiles(variantId)) {
+      const key = tile.type === "joker" ? "joker" : tileKey(tile);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      if (!samples.has(key)) samples.set(key, tile);
+    }
+    tileTotalsByVariant.set(variantId, { counts, samples });
+  }
+  return tileTotalsByVariant.get(variantId);
+}
+
+/** Counts the copies of each tile a player has not seen in their hand, discards, flowers, or exposures. */
+function unseenTileCounts(playerIndex) {
+  const unseen = new Map(tileTotals(game.variantId).counts);
+  const remove = (tile) => {
+    if (tile.type !== "joker") unseen.set(tileKey(tile), (unseen.get(tileKey(tile)) ?? 0) - 1);
+  };
+  for (const discard of game.discards) {
+    if (!discard.claimed) remove(discard.tile);
+  }
+  for (const [index, player] of game.players.entries()) {
+    if (index === playerIndex) player.hand.forEach(remove);
+    player.flowers.forEach(remove);
+    player.melds.forEach((meld) => meld.tiles.forEach(remove));
+  }
+  return unseen;
+}
+
+/** Plans the closest sets-and-pair winning pattern for a player's hand (all rulesets without a card). */
+function planWinningHand(playerIndex, hand = game.players[playerIndex].hand,
+  meldCount = game.players[playerIndex].melds.length, available = unseenTileCounts(playerIndex)) {
+  const variant = VARIANTS[game.variantId];
+  const american = variant.mode === "american";
+  const counts = new Map();
+  let jokers = 0;
+  for (const tile of hand) {
+    if (tile.type === "joker") jokers += 1;
+    else if (american || tile.type !== "flower") counts.set(tileKey(tile), (counts.get(tileKey(tile)) ?? 0) + 1);
+  }
+  return HandPlanner.plan({
+    counts,
+    sets: variant.meldsToWin - meldCount,
+    jokers,
+    sequences: !american,
+    available,
+    pairAllowed: american ? (key) => key !== "flower-0" : () => true
+  });
+}
+
+const plannedDiscardCache = new Map();
+
+/**
+ * Chooses the discard that leaves the hand fewest tiles from a winning pattern,
+ * breaking ties by how many unseen tiles would then improve the hand.
+ */
+function planDiscard(playerIndex, hand = game.players[playerIndex].hand, meldCount = game.players[playerIndex].melds.length, quick = false) {
+  const player = game.players[playerIndex];
+  const signature = [game.variantId, playerIndex, meldCount, player.riichi, player.riichiPending, player.drawnTileId,
+    game.discards.length, game.players.map((item) => item.melds.length).join(","), hand.map((tile) => tile.id).join(","), quick].join("|");
+  if (plannedDiscardCache.has(signature)) return plannedDiscardCache.get(signature);
+  const available = unseenTileCounts(playerIndex);
+  const candidates = [];
+  const tried = new Set();
+  for (const tile of sortedHand(hand)) {
+    if (tile.type === "joker" || tried.has(tileKey(tile))) continue;
+    if (player.riichi && !player.riichiPending && tile.id !== player.drawnTileId && hand === player.hand) continue;
+    const rest = hand.filter((item) => item.id !== tile.id);
+    if (player.riichiPending && !isTenpai(rest, meldCount, game.variantId)) continue;
+    tried.add(tileKey(tile));
+    candidates.push({ tile, rest, need: planWinningHand(playerIndex, rest, meldCount, available).need });
+  }
+  if (!candidates.length) return null;
+  const bestNeed = Math.min(...candidates.map((candidate) => candidate.need));
+  const tied = candidates.filter((candidate) => candidate.need === bestNeed)
+    .sort((a, b) => tileKeepValue(a.tile, hand) - tileKeepValue(b.tile, hand))
+    .slice(0, 6);
+  // Only tiles that can join held tiles (same tile, or within two in a suit) are tested as useful draws.
+  const nearby = new Set();
+  for (const tile of hand) {
+    if (tile.type === "joker") continue;
+    nearby.add(tileKey(tile));
+    if (VARIANTS[game.variantId].mode !== "american" && ["characters", "circles", "bamboo"].includes(tile.type)) {
+      for (const offset of [-2, -1, 1, 2]) {
+        if (tile.value + offset >= 1 && tile.value + offset <= 9) nearby.add(`${tile.type}-${tile.value + offset}`);
+      }
+    }
+  }
+  for (const candidate of tied) {
+    candidate.accepts = 0;
+    if (quick || tied.length === 1 || bestNeed === 0) continue;
+    for (const key of nearby) {
+      const copies = available.get(key) ?? 0;
+      if (copies <= 0 || (key === "flower-0" && VARIANTS[game.variantId].mode !== "american")) continue;
+      const drawn = { ...tileTotals(game.variantId).samples.get(key), id: -1 };
+      if (planWinningHand(playerIndex, [...candidate.rest, drawn], meldCount, available).need < bestNeed) {
+        candidate.accepts += copies;
+      }
+    }
+  }
+  tied.sort((a, b) => b.accepts - a.accepts ||
+    tileKeepValue(a.tile, hand) - tileKeepValue(b.tile, hand) ||
+    a.tile.sort - b.tile.sort);
+  const result = { tile: tied[0].tile, need: bestNeed, accepts: tied[0].accepts };
+  if (plannedDiscardCache.size > 50) plannedDiscardCache.clear();
+  plannedDiscardCache.set(signature, result);
+  return result;
+}
+
+/** Tutor advice for a planned discard in rulesets that use the sets-and-pair pattern. */
+function plannedDiscardAdvice(player) {
+  const choice = planDiscard(0);
+  if (!choice) return null;
+  const now = planWinningHand(0).need;
+  const reason = choice.need <= now
+    ? "It isn't part of your pattern to win shown in the center of the table."
+    : "Every tile fits your pattern to win, so this gives up the least.";
+  const away = choice.need === 0 ? "You will be ready to win." : `You will need ${choice.need} more tile${choice.need === 1 ? "" : "s"} to win`;
+  const outs = choice.need > 0 && choice.accepts ? ` (${choice.accepts} unseen tiles would help).` : choice.need > 0 ? "." : "";
+  const riichi = game.variantId === "japanese-riichi" && !hasOpenMelds(player)
+    ? " Stay concealed so you can declare riichi when ready." : "";
+  return { tile: choice.tile, explanation: `${reason} ${away}${outs}${riichi}` };
+}
+
+/** Checks whether an exposed Riichi triplet or quad gives a yaku (dragons, seat wind, or East round wind). */
+function isYakuhaiClaim(option, player) {
+  const tile = option.tiles[0];
+  if (!["pung", "kong"].includes(option.type) || !tile) return false;
+  return tile.type === "dragon" || (tile.type === "wind" && (tile.value === 0 || tile.value === WINDS.indexOf(player.direction)));
+}
+
+/** Picks the claim that brings a player closest to their pattern to win, or null to pass. */
+function chooseStandardClaim(playerIndex, options) {
+  const player = game.players[playerIndex];
+  const before = planWinningHand(playerIndex).need;
+  let best = null;
+  for (const option of options) {
+    if (!["pung", "kong", "chow"].includes(option.type)) continue;
+    if (game.variantId === "japanese-riichi" && !isYakuhaiClaim(option, player)) continue;
+    const used = new Set(option.tiles.map((tile) => tile.id));
+    const rest = player.hand.filter((tile) => !used.has(tile.id));
+    const meldCount = player.melds.length + 1;
+    const need = option.type === "kong"
+      ? planWinningHand(playerIndex, rest, meldCount).need
+      : planDiscard(playerIndex, rest, meldCount, true)?.need ?? Infinity;
+    const improves = option.type === "kong" ? need <= before : need < before;
+    if (improves && (!best || need < best.need)) best = { option, need, before };
+  }
+  return best;
+}
+
+/** Chooses three non-joker tiles for a bot to pass in the Charleston. */
+function botCharlestonPass(playerIndex) {
+  const player = game.players[playerIndex];
+  if (game.card) {
+    const advice = recommendAmericanTiles(player, 3);
+    if (advice?.tiles.length === 3) return advice.tiles;
+  }
+  let hand = [...player.hand];
+  const picks = [];
+  while (picks.length < 3) {
+    const choice = planDiscard(playerIndex, hand);
+    if (!choice) break;
+    picks.push(choice.tile);
+    hand = hand.filter((tile) => tile.id !== choice.tile.id);
+  }
+  return picks;
+}
+
 /** Selects the lowest-value discard candidate for a player. */
 function recommendDiscard(player) {
   const candidates = player.hand.map((tile) => ({
@@ -3461,11 +3813,13 @@ function runBotTurn() {
       declareClaimWin();
       return;
     }
-    const option = claim.options.find((candidate) => candidate.type === "sextet") ??
-      claim.options.find((candidate) => candidate.type === "quint") ??
-      claim.options.find((candidate) => candidate.type === "kong") ??
-      claim.options.find((candidate) => candidate.type === "pung") ??
-      claim.options.find((candidate) => candidate.type === "chow");
+    const bot = game.players[claim.player];
+    const option = game.card
+      ? (() => {
+        const choice = americanClaimChoice(bot, claim.options, game.pendingDiscard.tile);
+        return choice.worth ? choice.bestClaim.option : null;
+      })()
+      : chooseStandardClaim(claim.player, claim.options)?.option;
     if (option) {
       claimMeld(option);
     } else {
@@ -3482,24 +3836,39 @@ function runBotTurn() {
     declareSelfDraw();
     return;
   }
-  const exchange = findAmericanJokerExchanges(game.current)[0];
+  const exchange = findAmericanJokerExchanges(game.current).find((candidate) => {
+    if (!game.card) return true;
+    const best = rankAmericanLines(player.hand, player.melds)[0];
+    const group = best?.groups.find((item) => item.tiles.some((tile) => tile.id === candidate.tileId));
+    return !group || group.size >= 3;
+  });
   if (exchange) {
     exchangeAmericanJoker(exchange);
     return;
   }
-  if (findConcealedKong(player)) {
+  const kongTiles = findConcealedKong(player);
+  if (kongTiles && planWinningHand(game.current, player.hand.filter((tile) => !kongTiles.includes(tile)),
+    player.melds.length + 1).need <= planWinningHand(game.current).need) {
     declareConcealedKong();
     return;
   }
-  const recommendation = recommendDiscard(player);
-  if (!recommendation) {
+  let riichiDeclared = false;
+  if (game.variantId === "japanese-riichi" && canDeclareRiichi(player)) {
+    declareRiichi();
+    riichiDeclared = player.riichi;
+  }
+  const recommendation = game.card
+    ? recommendAmericanTiles(player, 1) ?? recommendDiscard(player)
+    : planDiscard(game.current) ?? recommendDiscard(player);
+  if (!recommendation?.tile) {
     elements.turnMessage.textContent = `${player.name} has no tile available to discard.`;
     return;
   }
   const drawnTile = player.hand.find((tile) => tile.id === player.drawnTileId);
+  const riichiText = riichiDeclared ? " and declares riichi" : "";
   const message = drawnTile
-    ? `${player.name} draws the ${tileDescription(drawnTile)}, then discards the ${tileDescription(recommendation.tile)}.`
-    : `${player.name} discards the ${tileDescription(recommendation.tile)}.`;
+    ? `${player.name} draws the ${tileDescription(drawnTile)}, then discards the ${tileDescription(recommendation.tile)}${riichiText}.`
+    : `${player.name} discards the ${tileDescription(recommendation.tile)}${riichiText}.`;
   const cues = drawnTile
     ? [
       {
@@ -3672,8 +4041,9 @@ elements.privacyReady.addEventListener("click", () => {
   render();
 });
 let americanCardPreviewTimer = null;
+let americanTargetCard = null;
 
-function makeCardExample(line, title) {
+function makeCardExample(line, title, progress = null) {
   const example = document.createElement("div");
   example.className = "card-example";
   const label = document.createElement("div");
@@ -3681,18 +4051,24 @@ function makeCardExample(line, title) {
   label.textContent = title;
   const groupContainer = document.createElement("div");
   groupContainer.className = "card-example-groups";
+  groupContainer.style.setProperty("--example-slots", String(line.groups.reduce((sum, group) => sum + group.size, 0) + line.groups.length - 1));
+  groupContainer.style.setProperty("--example-max-group", String(Math.max(...line.groups.map((group) => group.size))));
   const tileSet = createTiles("american");
   const groups = AmericanCard.exampleGroups(line, tileSet);
   for (const [groupIndex, tiles] of groups.entries()) {
     const group = line.groups[groupIndex];
+    const status = progress?.groups[groupIndex];
+    const have = !status ? group.size : status.exposed ? group.size : status.tiles.length;
     const target = tileSet.find((tile) => tile.type !== "joker" && AmericanCard.key(tile) === group.key);
     if (!target) throw new Error("Cannot display card example: unrecognized tile.");
     const targetName = group.key === "flower-0" ? "flower" : tileDescription(target, "american");
     const groupElement = document.createElement("div");
     groupElement.className = "card-example-group";
     groupElement.setAttribute("role", "group");
-    groupElement.setAttribute("aria-label", `${group.size} ${targetName} tiles`);
-    for (const tile of tiles) {
+    groupElement.setAttribute("aria-label", progress
+      ? `${group.size} ${targetName} tiles, you have ${have}`
+      : `${group.size} ${targetName} tiles`);
+    for (const [tileIndex, tile] of tiles.entries()) {
       const face = makeTile(tile, true, "american");
       const description = tile.type === "joker"
         ? `Joker substituting for ${group.key === "flower-0" ? "a flower" : targetName}`
@@ -3701,6 +4077,7 @@ function makeCardExample(line, title) {
       face.setAttribute("role", "img");
       face.setAttribute("aria-label", description);
       face.title = description;
+      if (tileIndex >= have) face.classList.add("card-missing");
       groupElement.append(face);
     }
     groupContainer.append(groupElement);
@@ -3709,74 +4086,335 @@ function makeCardExample(line, title) {
   return example;
 }
 
+/** Builds the default library: the 2026 card from your list, plus any earlier private card. */
+function defaultCardLibrary(legacyText = null) {
+  const cards = [{ id: BUILT_IN_CARD_ID, name: "2026 card (your list)", text: AmericanCard.defaultCardText, builtIn: true }];
+  if (legacyText) cards.push({ id: "card-private", name: "My private card", text: legacyText, builtIn: false });
+  return { format: AMERICAN_LIBRARY_FORMAT, version: 1, selectedId: BUILT_IN_CARD_ID, target: "auto", cards };
+}
+
+function isCardLibrary(data) {
+  return Boolean(data) && data.format === AMERICAN_LIBRARY_FORMAT && data.version === 1 &&
+    typeof data.selectedId === "string" && typeof data.target === "string" && Array.isArray(data.cards) &&
+    data.cards.every((card) => card && typeof card.id === "string" && typeof card.name === "string" &&
+      typeof card.text === "string") &&
+    new Set(data.cards.map((card) => card.id)).size === data.cards.length;
+}
+
+/** Loads the saved card library, creating and saving it (with any earlier private card) on first use. */
+function loadCardLibrary() {
+  try {
+    const stored = localStorage.getItem(AMERICAN_LIBRARY_STORAGE);
+    if (stored !== null) {
+      const data = JSON.parse(stored);
+      if (!isCardLibrary(data)) throw new Error("unrecognized saved card format");
+      if (!data.cards.some((card) => card.id === BUILT_IN_CARD_ID)) data.cards.unshift(defaultCardLibrary().cards[0]);
+      for (const card of data.cards) card.builtIn = card.id === BUILT_IN_CARD_ID;
+      return { library: data, message: "" };
+    }
+    let legacyText = null;
+    const legacy = localStorage.getItem(AMERICAN_CARD_STORAGE);
+    if (legacy !== null) {
+      const data = JSON.parse(legacy);
+      if (data?.version === 1 && typeof data.text === "string" && data.text.trim()) legacyText = data.text;
+    }
+    const library = defaultCardLibrary(legacyText);
+    localStorage.setItem(AMERICAN_LIBRARY_STORAGE, JSON.stringify(library));
+    return { library, message: legacyText ? "Your earlier private card was added to your saved cards as \"My private card\"." : "" };
+  } catch (error) {
+    return {
+      library: defaultCardLibrary(),
+      message: `Saved cards could not be loaded (${error.message}). Showing the original 2026 card; saving will replace the unreadable data.`
+    };
+  }
+}
+
+function saveCardLibrary() {
+  localStorage.setItem(AMERICAN_LIBRARY_STORAGE, JSON.stringify(cardLibrary));
+}
+
+/** Parses a saved card once per text; throws the parse error for cards that need fixing. */
+function libraryCardLines(card) {
+  let entry = parsedCardTexts.get(card.text);
+  if (!entry) {
+    try {
+      entry = { lines: AmericanCard.parse(card.text) };
+    } catch (error) {
+      entry = { error };
+    }
+    parsedCardTexts.set(card.text, entry);
+  }
+  if (entry.error) throw entry.error;
+  return entry.lines;
+}
+
+function selectedLibraryCard() {
+  return cardLibrary.cards.find((card) => card.id === cardLibrary.selectedId) ?? null;
+}
+
+function renderCardLibraryOptions() {
+  const options = cardLibrary.cards.map((card) => {
+    let suffix = "";
+    try {
+      libraryCardLines(card);
+    } catch {
+      suffix = " — needs fixing";
+    }
+    return new Option(`${card.name}${suffix}`, card.id);
+  });
+  options.push(new Option("Simplified practice (no card)", NO_CARD_ID));
+  elements.americanCardSource.replaceChildren(...options);
+  elements.americanCardSource.value = selectedLibraryCard() ? cardLibrary.selectedId : NO_CARD_ID;
+}
+
+/** Loads the selected card into the editor. */
+function loadCardEditor() {
+  const card = selectedLibraryCard();
+  elements.americanCardName.value = card?.name ?? "";
+  elements.americanCardText.value = card?.text ?? "";
+  elements.saveAmericanCard.disabled = !card;
+  elements.restoreAmericanCard.hidden = !card?.builtIn;
+  elements.deleteAmericanCard.hidden = !card || card.builtIn;
+  clearTimeout(americanCardPreviewTimer);
+  renderAmericanCardPreview();
+}
+
+/** Shows the card controls only when the American ruleset is chosen. */
+function updateAmericanCardVisibility() {
+  const american = elements.variantSelect.value === "american";
+  elements.americanCardPanel.hidden = !american;
+  elements.americanCardPhoneButton.hidden = !american;
+  if (!american && document.body.classList.contains("phone-card")) setPhonePanel("card", false);
+}
+
+/** Uses the selected card for an American hand that has not been dealt yet. */
+function applySelectedCardBeforeDeal() {
+  if (!game || game.variantId !== "american" || game.phase !== "setup" || game.winner !== null) return false;
+  const libraryCard = selectedLibraryCard();
+  let card = null;
+  try {
+    card = libraryCard ? libraryCardLines(libraryCard) : null;
+  } catch {
+    return false;
+  }
+  game.card = card;
+  game.cardSource = !card ? "none" : libraryCard.builtIn ? "supplied" : "private";
+  game.cardName = libraryCard?.name ?? "";
+  render();
+  return true;
+}
+
+/** Saves the library; on failure restores the previous state and reports the error. */
+function commitCardLibrary(previous, success) {
+  try {
+    saveCardLibrary();
+  } catch (error) {
+    cardLibrary = previous;
+    elements.americanCardStatus.textContent = `Not saved: ${error.message}`;
+    return false;
+  }
+  renderCardLibraryOptions();
+  loadCardEditor();
+  const applied = applySelectedCardBeforeDeal();
+  updateAmericanCardTargets();
+  elements.americanCardStatus.textContent = `${success} ${applied ? "It is used for this hand." :
+    "It applies to the next American hand."}`;
+  return true;
+}
+
+function cloneCardLibrary() {
+  return { ...cardLibrary, cards: cardLibrary.cards.map((card) => ({ ...card })) };
+}
+
+/** Validates editor text; returns a short summary or reports the error. */
+function validateCardText(text) {
+  try {
+    const lines = AmericanCard.parse(text);
+    const count = AmericanCard.patterns(lines).length;
+    return `${count} pattern${count === 1 ? "" : "s"}, ${lines.length} variation${lines.length === 1 ? "" : "s"}`;
+  } catch (error) {
+    elements.americanCardStatus.textContent = `Not saved: ${error.message}`;
+    return null;
+  }
+}
+
+function uniqueCardName(name) {
+  const names = new Set(cardLibrary.cards.map((card) => card.name));
+  let candidate = name;
+  for (let copy = 2; names.has(candidate); copy += 1) candidate = `${name} (${copy})`;
+  return candidate;
+}
+
+function addLibraryCard(name, text, verb) {
+  const summary = validateCardText(text);
+  if (!summary) return;
+  const previous = cloneCardLibrary();
+  const card = {
+    id: `card-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+    name: uniqueCardName(name.trim() || "My card"),
+    text,
+    builtIn: false
+  };
+  cardLibrary.cards.push(card);
+  cardLibrary.selectedId = card.id;
+  commitCardLibrary(previous, `${verb} "${card.name}" (${summary}) and selected it.`);
+}
+
+/** The card whose patterns the target menu lists: the active American hand's card, or else the selected card. */
+function targetMenuCard() {
+  if (game?.variantId === "american" && game.card) return game.card;
+  const card = selectedLibraryCard();
+  try {
+    return card ? libraryCardLines(card) : null;
+  } catch {
+    return null;
+  }
+}
+
 function renderAmericanCardTarget() {
-  const index = Number(elements.americanCardTarget.value);
-  const source = elements.americanCardSource.value;
-  const line = elements.americanCardTarget.value === "" ? null :
-    source === "supplied" ? suppliedAmericanPatterns.patterns[index]?.lines[0] :
-      source === "private" ? savedAmericanCard?.[index] : null;
+  if (!game) return;
+  if (!(game.variantId === "american" && game.card)) {
+    renderPlannedTarget();
+    return;
+  }
+  const value = elements.americanCardTarget.value;
+  const card = game?.variantId === "american" ? game.card : null;
+  let line = null;
+  let progress = null;
+  if (card && value) {
+    const active = game.winner === null && !game.privacyRequired && game.phase !== "setup";
+    const ranked = active ? rankAmericanLines(game.players[0].hand, game.players[0].melds, chosenAmericanPattern()) : [];
+    if (value === "auto") {
+      progress = ranked[0] ?? null;
+      line = progress?.line ?? card[0];
+    } else {
+      const pattern = Number(value);
+      progress = ranked.find((entry) => entry.line.pattern === pattern) ?? null;
+      line = progress?.line ?? card.find((item) => item.pattern === pattern) ?? null;
+    }
+  }
+  elements.cardTargetBanner.closest(".table-center")?.classList.toggle("has-card-target", Boolean(line));
   if (!line) {
     elements.americanCardTargetExample.replaceChildren();
     elements.cardTargetBanner.hidden = true;
     return;
   }
-  const name = elements.americanCardTarget.selectedOptions[0].textContent;
-  const score = source === "private" ? "" : ` · ${line.value} points`;
-  const label = `${name}${score} · ${line.concealed ? "Concealed" : "Exposable"} · one possible variation`;
-  elements.americanCardTargetExample.replaceChildren(makeCardExample(line, label));
+  const away = progress ? ` · ${progress.need === 0 ? "complete" : `need ${progress.need}`}` : "";
+  const label = `${americanLineName(line)} · ${line.value} pts${line.concealed ? " · concealed" : ""}${away}`;
+  elements.americanCardTargetExample.replaceChildren(makeCardExample(line, label, progress));
   elements.cardTargetBanner.hidden = false;
 }
 
-function updateAmericanCardTargets() {
-  const source = elements.americanCardSource.value;
-  const previous = elements.americanCardTarget.value;
-  const options = source === "none" || (source === "private" && !savedAmericanCard)
-    ? []
-    : [new Option("No example", "")];
-  if (source === "supplied") {
-    suppliedAmericanPatterns.patterns.forEach((pattern, index) => {
-      options.push(new Option(pattern.name, String(index)));
-    });
-    const unavailable = document.createElement("optgroup");
-    unavailable.label = "Unavailable — needs clarification or correction";
-    for (const name of suppliedAmericanPatterns.unavailable) {
-      const option = new Option(name, "");
-      option.disabled = true;
-      unavailable.append(option);
-    }
-    options.push(unavailable);
-  } else if (source === "private" && savedAmericanCard) {
-    savedAmericanCard.forEach((line, index) => {
-      options.push(new Option(`Private line ${index + 1} · ${line.value} points`, String(index)));
-    });
+/** Draws the pattern to win for rulesets without a card: the closest sets and pair, with tiles still needed dimmed. */
+function renderPlannedTarget() {
+  const variant = VARIANTS[game.variantId];
+  const player = game.players[0];
+  const american = variant.mode === "american";
+  const { samples } = tileTotals(game.variantId);
+  const blank = (count) => Array.from({ length: count }, () => ({ tile: null, held: false }));
+  const groups = player.melds.map((meld) => ({
+    kind: "exposed", tiles: meld.tiles.map((tile) => ({ tile, held: true }))
+  }));
+  let need = null;
+  if (game.phase !== "setup" && player.hand.length > 0 && !game.privacyRequired) {
+    const plan = planWinningHand(0);
+    need = plan.need;
+    const planned = plan.groups.map((group) => ({
+      kind: group.kind,
+      tiles: group.tiles.map((item) => ({
+        tile: item.joker ? samples.get("joker") : item.key ? samples.get(item.key) : null,
+        held: item.held
+      }))
+    }));
+    groups.push(...planned.filter((group) => group.kind !== "pair"), ...planned.filter((group) => group.kind === "pair"));
   } else {
-    options.push(new Option(source === "private" ? "Save a private card first" : "Choose a card first", ""));
+    for (let slot = 0; slot < variant.meldsToWin; slot += 1) groups.push({ kind: "any", tiles: blank(3) });
+    groups.push({ kind: "pair", tiles: blank(2) });
   }
-  elements.americanCardTarget.replaceChildren(...options);
-  if (previous && [...elements.americanCardTarget.options].some((option) => option.value === previous && !option.disabled)) {
-    elements.americanCardTarget.value = previous;
+  const sets = `${variant.meldsToWin} ${american ? "matching sets" : "sets"}`;
+  const status = need === null ? "" : need === 0 ? " · complete" : ` · need ${need}`;
+  const label = `Pattern to win: ${sets} + pair${variant.mode === "riichi" ? " · riichi or a yaku" : ""}${status}`;
+  elements.cardTargetBanner.closest(".table-center")?.classList.add("has-card-target");
+  elements.americanCardTargetExample.replaceChildren(makePatternExample(label, groups));
+  elements.cardTargetBanner.hidden = false;
+}
+
+/** Builds a scaled tile drawing of planned groups; unknown tiles show as "?". */
+function makePatternExample(title, groups) {
+  const kindNames = { exposed: "Exposed set", pung: "Matching set", chow: "Run", pair: "Pair", any: "Any set" };
+  const example = document.createElement("div");
+  example.className = "card-example";
+  const label = document.createElement("div");
+  label.className = "card-example-label";
+  label.textContent = title;
+  const container = document.createElement("div");
+  container.className = "card-example-groups";
+  container.style.setProperty("--example-slots", String(groups.reduce((sum, group) => sum + group.tiles.length, 0) + groups.length - 1));
+  container.style.setProperty("--example-max-group", String(Math.max(...groups.map((group) => group.tiles.length))));
+  for (const group of groups) {
+    const element = document.createElement("div");
+    element.className = "card-example-group";
+    element.setAttribute("role", "group");
+    const have = group.tiles.filter((item) => item.held).length;
+    element.setAttribute("aria-label", `${kindNames[group.kind] ?? "Set"}, you have ${have} of ${group.tiles.length}`);
+    for (const { tile, held } of group.tiles) {
+      let face;
+      let description;
+      if (tile) {
+        face = makeTile(tile, true);
+        face.removeAttribute("data-tile-id");
+        description = tileDescription(tile);
+      } else {
+        face = document.createElement("span");
+        face.className = "tile small pattern-any";
+        face.textContent = "?";
+        description = group.kind === "pair" ? "Any pair tile" : "Any set tile";
+      }
+      face.setAttribute("role", "img");
+      face.setAttribute("aria-label", description);
+      face.title = description;
+      if (!held) face.classList.add("card-missing");
+      element.append(face);
+    }
+    container.append(element);
   }
-  elements.americanCardTarget.disabled = source === "none" || (source === "private" && !savedAmericanCard);
+  example.append(label, container);
+  return example;
+}
+
+/** Rebuilds the target menu when its card changes, keeping the saved choice, then redraws the center target. */
+function updateAmericanCardTargets() {
+  const card = targetMenuCard();
+  if (card !== americanTargetCard) {
+    americanTargetCard = card;
+    const options = card
+      ? [
+        new Option("No example", ""),
+        new Option("Closest to my hand", "auto"),
+        ...AmericanCard.patterns(card).map((pattern) => new Option(
+          `${pattern.name} · ${pattern.value} pts${pattern.concealed ? " · concealed" : ""}`, String(pattern.id)))
+      ]
+      : [new Option("Choose a card first", "")];
+    elements.americanCardTarget.replaceChildren(...options);
+    elements.americanCardTarget.disabled = !card;
+    if (card) {
+      const saved = cardLibrary.target;
+      const match = saved === "" || saved === "auto" ? saved
+        : AmericanCard.patterns(card).find((pattern) => pattern.name === saved)?.id;
+      elements.americanCardTarget.value = match === undefined ? "auto" : String(match);
+    }
+  }
   renderAmericanCardTarget();
 }
 
-/** Shows the first combination on the chosen card, if any. */
-function selectFirstAmericanCardTarget() {
-  if ([...elements.americanCardTarget.options].some((option) => option.value === "0")) {
-    elements.americanCardTarget.value = "0";
-  }
-  renderAmericanCardTarget();
-}
-
-/** Displays valid editor entries as American tile examples, even before saving. */
+/** Displays one example per pattern line in the editor, including unsaved edits. */
 function renderAmericanCardPreview() {
   const rows = [];
-  const text = elements.americanCardText.value;
-  for (const [index, raw] of text.split(/\r?\n/).entries()) {
-    if (!raw.trim()) continue;
-    let line;
+  for (const [index, raw] of elements.americanCardText.value.split(/\r?\n/).entries()) {
+    if (!raw.trim() || raw.trim().startsWith("#")) continue;
+    let lines;
     try {
-      [line] = AmericanCard.parse(raw);
+      lines = AmericanCard.parse(raw);
     } catch (error) {
       if (!(error instanceof Error)) throw error;
       const message = document.createElement("p");
@@ -3785,8 +4423,9 @@ function renderAmericanCardPreview() {
       rows.push(message);
       continue;
     }
-
-    rows.push(makeCardExample(line, `Line ${index + 1} · ${line.value} points · ${line.concealed ? "Concealed" : "Exposed"} · ${line.singles ? "Singles and Pairs" : "Regular"}`));
+    const [line] = lines;
+    const variations = lines.length > 1 ? ` · ${lines.length} variations` : "";
+    rows.push(makeCardExample(line, `${line.name ?? `Line ${index + 1}`} · ${line.value} pts · ${line.concealed ? "Concealed" : "Exposed"}${line.singles ? " · Singles and Pairs" : ""}${variations}`));
   }
   elements.americanCardExamples.replaceChildren(...rows);
   elements.americanCardPreview.hidden = rows.length === 0;
@@ -3797,43 +4436,89 @@ elements.americanCardText.addEventListener("input", () => {
   americanCardPreviewTimer = setTimeout(renderAmericanCardPreview, 150);
 });
 elements.saveAmericanCard.addEventListener("click", () => {
-  try {
-    const text = elements.americanCardText.value;
-    const parsed = AmericanCard.parse(text);
-    localStorage.setItem(AMERICAN_CARD_STORAGE, JSON.stringify({ version: 1, text }));
-    savedAmericanCard = parsed;
-    clearTimeout(americanCardPreviewTimer);
-    renderAmericanCardPreview();
-    const target = elements.americanCardSource.value === "private" ? elements.americanCardTarget.value : "";
-    elements.americanCardSource.value = "private";
-    updateAmericanCardTargets();
-    if (target === "" || Number(target) >= parsed.length) {
-      selectFirstAmericanCardTarget();
-    }
-    elements.americanCardStatus.textContent = `Saved ${parsed.length} combinations on this device and selected the saved private card. Changes apply to the next hand.`;
-  } catch (error) {
-    elements.americanCardStatus.textContent = `Card not saved: ${error.message}`;
+  const card = selectedLibraryCard();
+  if (!card) return;
+  const name = elements.americanCardName.value.trim();
+  if (!name) {
+    elements.americanCardStatus.textContent = "Not saved: enter a card name.";
+    return;
   }
+  const text = elements.americanCardText.value;
+  const summary = validateCardText(text);
+  if (!summary) return;
+  const previous = cloneCardLibrary();
+  Object.assign(card, { name, text });
+  commitCardLibrary(previous, `Saved "${name}" (${summary}) on this device.`);
+});
+elements.copyAmericanCard.addEventListener("click", () => {
+  const current = selectedLibraryCard();
+  const name = elements.americanCardName.value.trim() || (current ? `Copy of ${current.name}` : "My card");
+  addLibraryCard(current && name === current.name ? `Copy of ${name}` : name, elements.americanCardText.value, "Saved");
+});
+elements.restoreAmericanCard.addEventListener("click", () => {
+  const card = selectedLibraryCard();
+  if (!card?.builtIn || !window.confirm("Replace this card with the original 2026 patterns? Your edits to it will be lost.")) return;
+  const previous = cloneCardLibrary();
+  Object.assign(card, defaultCardLibrary().cards[0]);
+  commitCardLibrary(previous, "Restored the original 2026 card.");
 });
 elements.deleteAmericanCard.addEventListener("click", () => {
+  const card = selectedLibraryCard();
+  if (!card || card.builtIn || !window.confirm(`Delete "${card.name}" from this device?`)) return;
+  const previous = cloneCardLibrary();
+  cardLibrary.cards = cardLibrary.cards.filter((item) => item !== card);
+  cardLibrary.selectedId = BUILT_IN_CARD_ID;
+  commitCardLibrary(previous, `Deleted "${card.name}" and selected the 2026 card.`);
+});
+elements.exportAmericanCard.addEventListener("click", () => {
+  const name = elements.americanCardName.value.trim() || "American card";
+  const text = elements.americanCardText.value.replace(/^# Card: .*\r?\n/, "");
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([`# Card: ${name}\n${text}`], { type: "text/plain" }));
+  link.download = `${name.replace(/[^\w\- ]+/g, "").trim() || "american-card"}.txt`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(link.href), 0);
+  elements.americanCardStatus.textContent = `Exported "${name}" as a text file.`;
+});
+elements.importAmericanCard.addEventListener("change", async () => {
+  const [file] = elements.importAmericanCard.files;
+  elements.importAmericanCard.value = "";
+  if (!file) return;
+  if (file.size > 256 * 1024) {
+    elements.americanCardStatus.textContent = "Not imported: the file is larger than 256 KB.";
+    return;
+  }
   try {
-    localStorage.removeItem(AMERICAN_CARD_STORAGE);
-    savedAmericanCard = null;
-    elements.americanCardText.value = "";
-    clearTimeout(americanCardPreviewTimer);
-    renderAmericanCardPreview();
-    updateAmericanCardTargets();
-    elements.americanCardStatus.textContent = "Saved card deleted from this browser. The current hand is unchanged.";
+    const content = await file.text();
+    const header = /^# Card: (.*)\r?\n/.exec(content);
+    const name = header?.[1].trim() || file.name.replace(/\.[^.]*$/, "");
+    addLibraryCard(name, header ? content.slice(header[0].length) : content, "Imported");
   } catch (error) {
-    elements.americanCardStatus.textContent = `Card not deleted: ${error.message}`;
+    elements.americanCardStatus.textContent = `Not imported: ${error.message}`;
   }
 });
 elements.americanCardSource.addEventListener("change", () => {
-  elements.americanCardTarget.value = "";
-  updateAmericanCardTargets();
-  selectFirstAmericanCardTarget();
+  const previous = cloneCardLibrary();
+  cardLibrary.selectedId = elements.americanCardSource.value;
+  const card = selectedLibraryCard();
+  commitCardLibrary(previous, card ? `Selected "${card.name}".` : "Selected simplified practice (no card).");
 });
-elements.americanCardTarget.addEventListener("change", renderAmericanCardTarget);
+elements.americanCardTarget.addEventListener("change", () => {
+  const value = elements.americanCardTarget.value;
+  cardLibrary.target = value === "" || value === "auto" ? value
+    : AmericanCard.patterns(americanTargetCard).find((pattern) => String(pattern.id) === value)?.name ?? "auto";
+  try {
+    saveCardLibrary();
+  } catch (error) {
+    elements.americanCardStatus.textContent = `Target choice could not be saved: ${error.message}`;
+  }
+  const recommendation = getTutorRecommendation();
+  renderHand(recommendation);
+  renderTutor(recommendation);
+  renderAmericanCardTarget();
+});
 elements.layoutSelect.addEventListener("change", () => {
   document.body.dataset.layout = elements.layoutSelect.value;
   try {
@@ -3851,7 +4536,22 @@ document.querySelectorAll("[data-phone-panel]").forEach((button) => {
   });
 });
 elements.newGame.addEventListener("click", () => newGame());
-elements.variantSelect.addEventListener("change", updateVariantNote);
+elements.variantSelect.addEventListener("change", () => {
+  try {
+    localStorage.setItem(VARIANT_STORAGE, elements.variantSelect.value);
+  } catch {
+    // The ruleset still applies; it just won't be remembered.
+  }
+  updateAmericanCardVisibility();
+  const untouched = game && game.winner === null && game.discards.length === 0 && !game.phase.startsWith("charleston") &&
+    game.players.every((player) => player.melds.length === 0);
+  if (untouched) {
+    newGame(game.handNumber === 1 ? null : game.dealer, game.handNumber);
+    return;
+  }
+  updateVariantNote();
+  updateAmericanCardTargets();
+});
 elements.showSymbolGuide.addEventListener("change", updateGuideVisibility);
 elements.showPatternExamples.addEventListener("change", updateGuideVisibility);
 elements.showBotHands.addEventListener("change", renderPlayers);
@@ -3902,7 +4602,7 @@ elements.botNarrationEnabled.addEventListener("change", () => {
 /** Updates the note describing the selected ruleset and its status. */
 function updateVariantNote() {
   const selected = VARIANTS[elements.variantSelect.value] ?? VARIANTS["chinese-classical"];
-  const active = game?.card ? `American (${game.cardSource === "private" ? "private card" : "provided patterns"})` : game?.variantId === "american"
+  const active = game?.card ? `American (${game.cardName || "card"})` : game?.variantId === "american"
     ? "American (simplified, no card)" : game ? VARIANTS[game.variantId].label : selected.label;
   elements.variantNote.textContent = `${selected.label}: ${selected.description} Selection applies to the next hand (active hand: ${active}).`;
 }
@@ -3930,19 +4630,15 @@ document.body.dataset.layout = elements.layoutSelect.value;
 updateGuideVisibility();
 renderSymbolGuide();
 try {
-  const stored = localStorage.getItem(AMERICAN_CARD_STORAGE);
-  if (stored !== null) {
-    const data = JSON.parse(stored);
-    if (!data || data.version !== 1 || typeof data.text !== "string") {
-      throw new Error("Unrecognized saved card format.");
-    }
-    savedAmericanCard = AmericanCard.parse(data.text);
-    elements.americanCardText.value = data.text;
-    elements.americanCardStatus.textContent = `Loaded ${savedAmericanCard.length} saved combinations from this device.`;
-  }
-} catch (error) {
-  elements.americanCardStatus.textContent = `Unable to load saved card: ${error.message}`;
+  const savedVariant = localStorage.getItem(VARIANT_STORAGE);
+  if (savedVariant !== null && VARIANTS[savedVariant]) elements.variantSelect.value = savedVariant;
+} catch {
+  // Use the default ruleset when storage is unavailable.
 }
-renderAmericanCardPreview();
-updateAmericanCardTargets();
+const loadedCardLibrary = loadCardLibrary();
+cardLibrary = loadedCardLibrary.library;
+elements.americanCardStatus.textContent = loadedCardLibrary.message;
+renderCardLibraryOptions();
+loadCardEditor();
+updateAmericanCardVisibility();
 newGame(undefined, 1, elements.variantSelect.value);

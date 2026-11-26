@@ -7,6 +7,7 @@
   <title>Mahjong Table</title>
   <link rel="stylesheet" href="styles.css">
   <script src="american-card.js" defer></script>
+  <script src="hand-planner.js" defer></script>
   <script src="game.js" defer></script>
 </head>
 <body>
@@ -41,7 +42,7 @@
     <nav class="phone-tools" aria-label="iPhone display options">
       <button type="button" data-phone-panel="wall" aria-controls="wall-area" aria-expanded="false">Show wall</button>
       <button type="button" data-phone-panel="guides" aria-controls="symbol-reference pattern-reference" aria-expanded="false">Show guides</button>
-      <button type="button" data-phone-panel="narration" aria-controls="turn-commentary" aria-expanded="false">Show narration</button>
+      <button type="button" data-phone-panel="narration" aria-controls="turn-commentary" aria-expanded="false">Show voice</button>
       <button type="button" data-phone-panel="card" aria-controls="card-target card-entry" aria-expanded="false">Show card</button>
       <button type="button" data-phone-panel="bots" aria-controls="player-1 player-2 player-3" aria-expanded="false">Show bot tiles</button>
       <button type="button" data-phone-panel="tutor" aria-controls="tutor-note" aria-expanded="false">Show tutor</button>
@@ -49,28 +50,44 @@
     </nav>
     <p class="variant-note" id="variant-note" aria-live="polite"></p>
 
-    <section class="card-target" id="card-target" aria-labelledby="card-target-title">
+    <section class="card-target" id="card-target" aria-labelledby="card-target-title" hidden>
       <h2 id="card-target-title">American card and target</h2>
       <div class="card-target-controls">
-        <label for="american-card-source">Card for the next American hand
-          <select id="american-card-source">
-            <option value="none">Simplified practice (no card)</option>
-            <option value="supplied">Provided patterns</option>
-            <option value="private">Saved private card</option>
-          </select>
+        <label for="american-card-source">Card
+          <select id="american-card-source"></select>
         </label>
-        <label for="american-card-target">Show a combination
+        <label for="american-card-target">Target pattern
           <select id="american-card-target">
             <option value="">Choose a card first</option>
           </select>
         </label>
       </div>
-      <p>The selected combination is shown at the top of the game as a visual target only; all available combinations on the chosen card remain playable. Card selection applies to the next hand.</p>
-      <p>Provided patterns use a one-point base: the winner earns the listed points, without deductions, and scores accumulate across hands. These X patterns are treated as exposable. Incomplete or ambiguous patterns are unavailable; this is not an official card.</p>
-    </section>
-
-    <section class="card-target-banner" id="card-target-banner" aria-label="Selected American combination" hidden>
-      <div id="american-card-target-example" aria-live="polite"></div>
+      <p id="american-card-note">Your saved cards stay in this browser. The required pattern is shown in the center of the American table; tiles you still need are dimmed. <strong>Closest to my hand</strong> follows the pattern your tiles are nearest to; every pattern on the card can still win.</p>
+      <details class="card-entry" id="card-entry">
+        <summary>Edit, copy, import, or export cards</summary>
+        <label for="american-card-name">Card name</label>
+        <input id="american-card-name" type="text" maxlength="60" autocomplete="off">
+        <label for="american-card-text">Patterns (one per line)</label>
+        <textarea id="american-card-text" rows="10" spellcheck="false" wrap="off"></textarea>
+        <div class="actions">
+          <button id="save-american-card" type="button">Save changes</button>
+          <button id="copy-american-card" class="secondary" type="button">Save as new card</button>
+          <button id="restore-american-card" class="secondary" type="button">Restore original 2026 card</button>
+          <button id="delete-american-card" class="secondary" type="button">Delete this card</button>
+          <button id="export-american-card" class="secondary" type="button">Export to file</button>
+          <label class="secondary file-button" for="import-american-card">Import from file
+            <input id="import-american-card" type="file" accept=".txt,text/plain">
+          </label>
+        </div>
+        <p id="american-card-status" role="status" aria-live="polite"></p>
+        <p>Format: <code>name | points | X or C | regular or singles | groups | optional suit rule</code>. X means exposed, C concealed; use singles for Singles and Pairs. Groups are tile:count, such as <code>F:3 x2:2 x4:2 x6:3 x8:4</code>. Lines starting with <code>#</code> are notes and are not played.</p>
+        <p>Fixed tiles: C1–C9 Craks, D1–D9 Dots, B1–B9 Bams, E S W N winds, R G dragons, 0 Soap, F flower. Suit letters <code>x y z v</code> mean "any suit" (each letter is one suit); <code>Dx</code> is the dragon matching suit x; <code>D*</code> any dragon; <code>W*</code> any wind; <code>xn xn+1 xn+2</code> are consecutive numbers. Add <code>suits 2</code> or <code>suits 1-2</code> to set how many different suits the letters use. A group holds 1–6 identical tiles; enter naturals, not jokers.</p>
+        <section id="american-card-preview" aria-labelledby="american-card-preview-title" hidden>
+          <h3 id="american-card-preview-title">Pattern examples</h3>
+          <p>One example per pattern, including unsaved edits. Jokers are shown where necessary; other jokers may substitute in groups of three or more.</p>
+          <div id="american-card-examples"></div>
+        </section>
+      </details>
     </section>
 
     <section class="game-layout" aria-label="Mahjong game">
@@ -157,6 +174,9 @@
         <div class="player player-left" id="player-3"></div>
         <div class="table-center">
           <div class="lantern" aria-hidden="true">萬</div>
+          <section class="card-target-banner" id="card-target-banner" aria-label="Pattern to win" hidden>
+            <div id="american-card-target-example"></div>
+          </section>
           <p class="round-label" id="round-label"></p>
           <p class="wall-count" id="wall-count"></p>
           <p class="drawn-legend">Gold outline marks a bot's latest draw</p>
@@ -170,7 +190,7 @@
               <p class="undo-status" id="undo-status" role="status" aria-live="polite"></p>
             </div>
             <div class="turn-commentary" id="turn-commentary">
-              <div class="turn-narration" id="turn-narration" role="status" aria-live="polite">Turn narration will explain each player's actions.</div>
+              <div class="turn-narration visually-hidden" id="turn-narration" role="status" aria-live="polite">Turn narration will explain each player's actions.</div>
               <label class="voice-control" for="voice-enabled">
                 <input id="voice-enabled" type="checkbox" checked>
                 Speak turn narration
@@ -210,28 +230,7 @@
       <summary>How to play</summary>
       <p>Choose iPhone or PC layout above. In iPhone layout, use the display buttons to reveal extra information. After your discard or claim pass, choose Undo to change it or Continue to let the other players act. Other supported actions can be undone until your next action. Charleston passes cannot be undone because all four players pass simultaneously.</p>
       <p>You play your own hand against three automatic opponents. Bot settings let you show or hide their concealed tiles and control spoken bot-move narration; exposed melds remain visible. The narration describes draws, discards, claims, and turns skipped by claims. While speech plays, the active player's panel and the tile being named glow. Draws animate from the wall as they are spoken, and discards move to the center when narrated. Use Speak turn narration to turn all speech off. When tutor guidance is enabled, it suggests a discard based on pairs and sequence connections; treat it as a learning aid, not a guaranteed best move. When your turn requires a draw, click Draw, then click a tile to discard. In the non-American rulesets, also use Draw for replacement tiles after a Kong; in American play, discard after a Kong claim. Drag tiles or use Alt+Left/Right while focused to arrange your hand. Click <strong>Declare win</strong> when the hand is complete. You can also choose any eligible claim after an opponent discards. After a hand ends, select <strong>Game review</strong> to compare your discards and win declarations with approximate self-draw estimates; meld claims, passes, Riichi, and Kong choices are not scored.</p>
-      <p>Choose a ruleset above; it applies to the next hand. Chinese Classical and Hong Kong use four melds and a pair. Riichi adds a basic riichi declaration and a small set of yaku. Taiwanese uses 16 tiles and five melds. American uses Craks, Dots, Bams, winds, dragons, flowers, and jokers; blank tiles are not in play. Four two-high walls are shown before dealing. On a new game, each player rolls two dice; tied high rolls are repeated to choose East. East rolls again to break the wall: count that many stacks from East's right and begin dealing at the highlighted stack. Select Deal tiles to start the Charleston. East rotates on the next hand. Choose a card at the top for card-based play, or use simplified card-free practice. Select three non-jokers for each pass; on the last pass of either Charleston you can select fewer and blind pass the remaining tiles. After the first Charleston you can choose whether to continue; the bots always agree. Scores carry across hands until the page is reloaded; the simplified and card-based American scores are separate. Furiten and some special hands in other rulesets are not implemented.</p>
-    </details>
-
-    <details class="rules card-entry" id="card-entry">
-      <summary>Private American card</summary>
-      <p>Enter each concrete combination from your own card, including every suit and number variation you want to play. Your entries stay in this browser on this device; other browsers and devices do not share them. Clearing browser data removes them.</p>
-      <p>One combination per line: <code>value | X or C | regular or singles | groups</code>. X means exposed, C concealed; use singles for the Singles and Pairs category. Groups use a tile code and count, such as <code>F:2 C1:3 C2:3 C3:3 C4:3</code>. This example is not an official card hand.</p>
-      <p>Codes: C1–C9 = Craks, D1–D9 = Dots, B1–B9 = Bams, E S W N = winds, R G = dragons, 0 = Soap, F = flower. A group can contain 1–6 identical tiles; list separate groups separately. Enter naturals, not jokers. Enter the card value, not a payout.</p>
-      <p>Dead-hand declarations, courtesy passes, special penalties, and card-aware bot strategy are not yet implemented.</p>
-      <label for="american-card-text">Card combinations</label>
-      <textarea id="american-card-text" rows="6" spellcheck="false" placeholder="25 | X | regular | F:2 C1:3 C2:3 C3:3 C4:3"></textarea>
-      <div class="actions">
-        <button id="save-american-card" type="button">Save card on this device</button>
-        <button id="delete-american-card" class="secondary" type="button">Delete saved card</button>
-      </div>
-      <p>After saving, choose <strong>Saved private card</strong> at the top for your next American hand.</p>
-      <p id="american-card-status" role="status" aria-live="polite"></p>
-      <section id="american-card-preview" aria-labelledby="american-card-preview-title" hidden>
-        <h3 id="american-card-preview-title">Combination examples</h3>
-        <p>These examples reflect the text above, including unsaved edits. Jokers are shown where necessary; other jokers may substitute in groups of three or more.</p>
-        <div id="american-card-examples"></div>
-      </section>
+      <p>Choose a ruleset above; it applies to the next hand. Chinese Classical and Hong Kong use four melds and a pair. Riichi adds a basic riichi declaration and a small set of yaku. Taiwanese uses 16 tiles and five melds. American uses Craks, Dots, Bams, winds, dragons, flowers, and jokers; blank tiles are not in play. Four two-high walls are shown before dealing. On a new game, each player rolls two dice; tied high rolls are repeated to choose East. East rolls again to break the wall: count that many stacks from East's right and begin dealing at the highlighted stack. Select Deal tiles to start the Charleston. East rotates on the next hand. Choose a saved card and target pattern in the American card panel (shown only for American), or use simplified card-free practice; the target pattern is drawn in the center of the table. Every other ruleset also shows its pattern to win in the center, with missing tiles dimmed, and the bots play toward their own closest pattern or card line. Select three non-jokers for each pass; on the last pass of either Charleston you can select fewer and blind pass the remaining tiles. After the first Charleston you can choose whether to continue; the bots always agree. Scores carry across hands until the page is reloaded; the simplified and card-based American scores are separate. Furiten and some special hands in other rulesets are not implemented.</p>
     </details>
 
     <fieldset class="guide-controls" id="guide-settings">

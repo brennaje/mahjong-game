@@ -74,7 +74,7 @@ test("examples reserve natural tiles for pairs and use jokers only where require
 });
 
 test("provided patterns generate playable 14-tile examples with valid suit and dragon variations", () => {
-  const { patterns, unavailable } = card.suppliedPatterns();
+  const patterns = card.patterns(card.parse(card.defaultCardText));
   const supply = [
     ...["characters", "circles", "bamboo"].flatMap((type) =>
       Array.from({ length: 9 }, (_, index) => tiles(type, index + 1, 4)).flat()),
@@ -100,15 +100,26 @@ test("provided patterns generate playable 14-tile examples with valid suit and d
     assert.equal(groups[4].key, `dragon-${dragonFor[firstSuit]}`);
     assert.equal(groups[6].key, `dragon-${dragonFor[secondSuit]}`);
   }
-  assert.ok(unavailable.some((name) => name.includes("1D unclear")));
-  assert.ok(unavailable.some((name) => name.includes("15 tiles")));
+  assert.equal(patterns.length, 15);
+  assert.ok(card.defaultCardText.includes("# Singles: NN EE WW SS 1D 1D 1D"));
 });
 
 test("provided consecutive pattern uses the written groups and supports runs through 9", () => {
-  const pattern = card.suppliedPatterns().patterns.find((item) => item.name.includes("FFF 1111 234 5555"));
+  const pattern = card.patterns(card.parse(card.defaultCardText)).find((item) => item.name.includes("FFF 1111 234 5555"));
   assert.ok(pattern.lines.some((line) => line.groups.map((group) => group.key).join(" ") ===
     "flower-0 bamboo-5 bamboo-6 bamboo-7 bamboo-8 bamboo-9"));
   assert.deepEqual(pattern.lines[0].groups.map((group) => group.size), [3, 4, 1, 1, 1, 4]);
+});
+
+test("named patterns expand suit letters under a suit rule and keep comments out", () => {
+  const lines = card.parse("# note\nPairs | 30 | C | regular | x2:3 Dx:3 y4:4 y6:4 | suits 2");
+  assert.equal(lines.length, 6);
+  assert.ok(lines.every((item) => item.name === "Pairs" && item.concealed && item.pattern === 2));
+  assert.ok(lines.every((item) => item.groups[0].key.split("-")[0] !== item.groups[2].key.split("-")[0]));
+  assert.equal(card.patterns(lines).length, 1);
+  assert.equal(card.parse("Any | 25 | X | regular | F:3 W*:4 F:3 D*:4").length, 12);
+  assert.throws(() => card.parse("Bad | 25 | X | regular | x2:3 0:3 y2:4 z6:4 | suits 4"), /suit rule/);
+  assert.throws(() => card.parse(" | 25 | X | regular | C1:3 C2:3 C3:4 C4:4"), /pattern name/);
 });
 
 test("card scoring accounts for discard, self draw, jokerless, and singles", () => {
@@ -118,4 +129,26 @@ test("card scoring accounts for discard, self draw, jokerless, and singles", () 
   assert.deepEqual(card.payouts(line(), 0, 1, []), [0, 100, 50, 50]);
   assert.deepEqual(card.payouts(line(), 0, null, []), [0, 100, 100, 100]);
   assert.deepEqual(card.payouts({ ...line(), singles: true }, 0, null, []), [0, 50, 50, 50]);
+});
+
+test("progress counts missing tiles, using jokers only for groups of three or more", () => {
+  const extra = tile("bamboo", 9);
+  const joker = tile("joker");
+  const hand = [
+    tile("flower", 0),
+    ...tiles("characters", 1, 3),
+    ...tiles("characters", 2, 2),
+    joker,
+    ...tiles("characters", 3, 3),
+    extra,
+    tile("characters", 4)
+  ];
+  const result = card.progress(line(), hand, []);
+  assert.equal(result.need, 3);
+  assert.ok(result.keep.has(joker.id));
+  assert.equal(result.keep.has(extra.id), false);
+  assert.equal(result.groups[0].tiles.length, 1);
+  const concealed = card.parse("25 | C | regular | F:2 C1:3 C2:3 C3:3 C4:3")[0];
+  const meld = { tiles: tiles("characters", 1, 3), targetKey: "characters-1" };
+  assert.equal(card.progress(concealed, hand, [meld]), null);
 });

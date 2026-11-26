@@ -753,6 +753,69 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.card-target[hidden],
+.phone-tools button[hidden] {
+  display: none !important;
+}
+
+.card-entry {
+  margin-top: 8px;
+}
+
+.card-entry summary {
+  width: fit-content;
+  color: #f0d99c;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.card-entry > label {
+  display: block;
+  margin-top: 8px;
+  font-size: 0.85rem;
+}
+
+.card-entry input[type="text"] {
+  display: block;
+  width: min(100%, 360px);
+  margin-top: 4px;
+  padding: 6px;
+  font: inherit;
+}
+
+.card-entry textarea {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.8rem;
+  white-space: pre;
+}
+
+.card-entry .actions {
+  justify-content: flex-start;
+}
+
+.card-entry .file-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 14px;
+  border: 1px solid rgba(239, 231, 208, 0.6);
+  border-radius: 6px;
+  color: #f1ead7;
+  cursor: pointer;
+}
+
+.card-entry .file-button:focus-within {
+  outline: 2px solid #f0d99c;
+  outline-offset: 2px;
+}
+
+.card-entry .file-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
 .card-example {
   margin-top: 12px;
   padding: 8px;
@@ -789,12 +852,70 @@ h1 {
 }
 
 .card-target-banner {
-  margin-bottom: 12px;
+  container-type: inline-size;
+  width: 100%;
+  margin: 6px 0 2px;
 }
 
 .card-target-banner .card-example {
   margin-top: 0;
+  padding: 4px;
+  border-color: rgba(226, 199, 133, 0.55);
   background: rgba(8, 39, 31, 0.55);
+}
+
+.card-target-banner .card-example-label {
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.card-target-banner .card-example-groups {
+  justify-content: center;
+  gap: 3px 4px;
+  margin-top: 3px;
+}
+
+/* One row when there is room; otherwise wrap whole groups, each sized to fit the center. */
+.card-target-banner .card-example-group .tile {
+  --tile-w: min(var(--example-cap, 28px), max(calc((100cqi - 12px) / var(--example-slots, 16)), min(calc((100cqi - 12px) / var(--example-max-group, 4) - 1px), var(--example-floor, 24px))));
+  width: var(--tile-w);
+  height: calc(var(--tile-w) * 1.38);
+  border-bottom-width: 2px;
+  font-size: calc(var(--tile-w) * 0.5);
+}
+
+.card-example-group .tile.card-missing {
+  opacity: 0.38;
+  filter: grayscale(0.7);
+}
+
+.card-example-group .tile.pattern-any {
+  display: inline-grid;
+  place-items: center;
+  border: 1px dashed rgba(226, 199, 133, 0.8);
+  background: rgba(255, 248, 230, 0.15);
+  color: #f3e3b5;
+  font-weight: 700;
+}
+
+.table-center.has-card-target .lantern {
+  display: none;
+}
+
+.board:has(.table-center.has-card-target) {
+  grid-template-columns: minmax(0, 1fr) 280px minmax(0, 1fr);
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
 }
 
 .tile.wall-tile {
@@ -1034,6 +1155,11 @@ button.tile.recommended {
   outline: 3px solid #f4c95d;
   outline-offset: 3px;
   box-shadow: 0 0 16px rgba(244, 201, 93, 0.75);
+}
+
+button.tile.suggested-pass {
+  outline: 2px dashed #f4c95d;
+  outline-offset: 2px;
 }
 
 .tile.small {
@@ -1435,25 +1561,30 @@ body[data-layout="iphone"] .board-top-row {
 }
 
 body[data-layout="iphone"] .card-target-banner {
-  margin-bottom: 4px;
+  --example-cap: 20px;
+  --example-floor: 17px;
+  margin: 2px 0;
 }
 
 body[data-layout="iphone"] .card-target-banner .card-example {
-  padding: 3px 5px;
+  padding: 2px;
 }
 
 body[data-layout="iphone"] .card-target-banner .card-example-label {
-  font-size: 0.66rem;
+  font-size: 0.58rem;
 }
 
 body[data-layout="iphone"] .card-target-banner .card-example-groups {
-  gap: 3px;
+  gap: 2px;
   margin-top: 2px;
 }
 
-body[data-layout="iphone"] .card-target-banner .card-example-group .tile {
-  width: 20px;
-  height: 28px;
+body[data-layout="iphone"] .board:has(.table-center.has-card-target) {
+  grid-template-columns: minmax(0, 1fr) 96px minmax(0, 1fr);
+}
+
+body[data-layout="iphone"].phone-bots .board:has(.table-center.has-card-target) {
+  grid-template-columns: minmax(0, 1fr) 76px minmax(0, 1fr);
 }
 
 body[data-layout="iphone"] .phone-discard-label {
@@ -1523,7 +1654,7 @@ body[data-layout="iphone"] .hand {
 
 /* Size each tile from the hand's tile count so every hand fits its row budget. */
 body[data-layout="iphone"] .hand button.tile {
-  --tile-w: min(46px, calc(100cqi / round(up, var(--hand-slots, 14) / var(--hand-rows), 1) - 3px));
+  --tile-w: min(41px, calc(100cqi / round(up, var(--hand-slots, 14) / var(--hand-rows), 1) - 3px));
   width: var(--tile-w);
   height: calc(var(--tile-w) * 1.32);
   font-size: calc(var(--tile-w) * 0.52);
@@ -1541,7 +1672,7 @@ body[data-layout="iphone"].phone-bots #player-2 .player-hand {
 }
 
 body[data-layout="iphone"].phone-bots .player:not(.player-bottom) .player-hand .tile {
-  --tile-w: min(30px, calc(100cqi / round(up, var(--hand-slots, 14) / var(--hand-rows), 1) - 2px));
+  --tile-w: min(27px, calc(100cqi / round(up, var(--hand-slots, 14) / var(--hand-rows), 1) - 2px));
   width: var(--tile-w);
   height: calc(var(--tile-w) * 1.36);
   border-bottom-width: 2px;
@@ -1639,6 +1770,15 @@ body[data-layout="iphone"] .undo-status {
     padding: 3px;
   }
 
+  body[data-layout="iphone"] .board:has(.table-center.has-card-target),
+  body[data-layout="iphone"].phone-bots .board:has(.table-center.has-card-target) {
+    grid-template-columns: minmax(0, 1fr) minmax(150px, 1.6fr) minmax(0, 1fr);
+  }
+
+  body[data-layout="iphone"] .card-target-banner {
+    flex: 1 0 100%;
+  }
+
   body[data-layout="iphone"] .player:not(.player-bottom) {
     flex-direction: row;
     flex-wrap: wrap;
@@ -1699,11 +1839,11 @@ body[data-layout="iphone"] .undo-status {
   }
 
   body[data-layout="iphone"] .hand button.tile {
-    --tile-w: min(40px, calc(100cqi / round(up, var(--hand-slots, 14) / var(--hand-rows), 1) - 2px));
+    --tile-w: min(36px, calc(100cqi / round(up, var(--hand-slots, 14) / var(--hand-rows), 1) - 2px));
   }
 
   body[data-layout="iphone"].phone-bots .player:not(.player-bottom) .player-hand .tile {
-    --tile-w: min(26px, calc(100cqi / round(up, var(--hand-slots, 14) / var(--hand-rows), 1) - 2px));
+    --tile-w: min(23px, calc(100cqi / round(up, var(--hand-slots, 14) / var(--hand-rows), 1) - 2px));
   }
 
   body[data-layout="iphone"].phone-bots .player:not(.player-bottom) .player-hand {
