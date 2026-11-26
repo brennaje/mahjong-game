@@ -164,15 +164,18 @@ test("the human hand remains visible and reorderable but cannot be discarded dur
   assert.deepEqual(discarded, [1]);
 });
 
-test("a chosen target pattern is the only card line that wins", () => {
+test("any card line wins and only your seat focuses on the chosen target", () => {
   const target = { value: "7" };
   const context = vm.createContext({
-    game: { card: [{ pattern: 3 }, { pattern: 7 }] },
+    game: { card: [{ pattern: 3 }, { pattern: 7 }], players: [{}, {}] },
     elements: { americanCardTarget: target },
     AmericanCard: { winningLines: () => [{ line: { pattern: 3 } }, { line: { pattern: 7 } }] }
   });
   implementation("function chosenAmericanPattern(", "/** Ranks the active card's lines", context);
-  assert.deepEqual(context.cardWinningLines([], { melds: [] }).map((match) => match.line.pattern), [7]);
-  target.value = "";
+  implementation("function americanFocusFor(", "/** Picks the tiles least useful", context);
   assert.equal(context.cardWinningLines([], { melds: [] }).length, 2);
+  assert.equal(context.americanFocusFor(context.game.players[0]), 7);
+  assert.equal(context.americanFocusFor(context.game.players[1]), null);
+  target.value = "";
+  assert.equal(context.americanFocusFor(context.game.players[0]), null);
 });

@@ -42,6 +42,9 @@ const AmericanCard = (() => {
       const high = Number(rule[2] ?? rule[1]);
       if (high < low || high > Math.max(1, variables.length)) fail("the suit rule needs that many suit letters (x y z v).");
       allowed = Array.from({ length: high - low + 1 }, (_, index) => low + index);
+    } else if (variables.length > 1) {
+      // Card convention: different letters are different suits; with four letters, all three suits appear.
+      allowed = [Math.min(variables.length, SUITS.length)];
     }
     let assignments = [{}];
     for (const variable of variables) {
@@ -289,7 +292,7 @@ const AmericanCard = (() => {
     "# name | points | X exposed or C concealed | regular or singles | groups | optional suit rule",
     "# Groups are tile:count. Fixed tiles: C1-C9 Craks, D1-D9 Dots, B1-B9 Bams, E S W N winds, R G 0 dragons (0 = Soap), F flower.",
     "# Suit letters x y z v stand for any suit (x2:3 = three 2s of suit x); Dx = dragon matching suit x;",
-    "# D* = any dragon, W* = any wind; xn, xn+1 ... = consecutive numbers. \"suits 2\" or \"suits 1-2\" limits how many different suits the letters use.",
+    "# D* = any dragon, W* = any wind; xn, xn+1 ... = consecutive numbers. \"suits 2\" or \"suits 1-2\" limits how many different suits the letters use; without one, different letters are different suits.",
     "2026: 222 000 2222 6666 · Any 2 suits | 25 | X | regular | x2:3 0:3 y2:4 z6:4 | suits 2",
     "2026: 2026 DDD 2222 DDD · 2 suits, matching dragons | 25 | X | regular | x2:1 0:1 x2:1 x6:1 Dx:3 y2:4 Dy:3 | suits 2",
     "2026: FFF 2026 222 6666 · Any 3 suits | 25 | X | regular | F:3 x2:1 0:1 x2:1 x6:1 y2:3 z6:4 | suits 3",

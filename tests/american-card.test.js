@@ -122,6 +122,16 @@ test("named patterns expand suit letters under a suit rule and keep comments out
   assert.throws(() => card.parse(" | 25 | X | regular | C1:3 C2:3 C3:4 C4:4"), /pattern name/);
 });
 
+test("without a suit rule, different letters are different suits", () => {
+  const suitsOf = (item) => new Set(item.groups.filter((group) => /^(characters|circles|bamboo)-/.test(group.key))
+    .map((group) => group.key.split("-")[0])).size;
+  const three = card.parse("Odd | 25 | X | regular | F:3 x1:2 y3:2 z5:3 Dz:4");
+  assert.equal(three.length, 6);
+  assert.ok(three.every((item) => suitsOf(item) === 3));
+  const four = card.parse("Even | 30 | X | regular | E:2 x2:2 y4:3 z6:3 v8:2 W:2");
+  assert.ok(four.every((item) => suitsOf(item) === 3));
+});
+
 test("card scoring accounts for discard, self draw, jokerless, and singles", () => {
   const joker = [tile("joker")];
   assert.deepEqual(card.payouts(line(), 0, 1, joker), [0, 50, 25, 25]);

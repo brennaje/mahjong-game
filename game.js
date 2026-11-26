@@ -2918,28 +2918,26 @@ function chosenAmericanPattern() {
   return value === "" ? null : Number(value);
 }
 
-/** The target pattern every seat must win with, or null when "Default" lets any card pattern win. */
+/** Your seat's chosen target pattern on the active card, or null for "Default". */
 function activeTargetPattern() {
   const pattern = chosenAmericanPattern();
   return pattern !== null && game?.card?.some((line) => line.pattern === pattern) ? pattern : null;
 }
 
-/** Lists the card lines a hand completes, limited to the target pattern when one is chosen. */
+/** Lists the card lines a hand completes; any pattern on the card wins, whatever target is chosen. */
 function cardWinningLines(hand, player) {
-  const pattern = activeTargetPattern();
-  return AmericanCard.winningLines(game.card, hand, player.melds)
-    .filter((match) => pattern === null || match.line.pattern === pattern);
+  return AmericanCard.winningLines(game.card, hand, player.melds);
 }
 
 /** Ranks the active card's lines by how few tiles a player still needs, focusing on a chosen pattern when it still fits. */
-function rankAmericanLines(hand, melds, pattern = null, strict = false) {
+function rankAmericanLines(hand, melds, pattern = null) {
   if (!game.card) return [];
   const ranked = game.card
     .map((line) => AmericanCard.progress(line, hand, melds))
     .filter(Boolean)
     .sort((a, b) => a.need - b.need || b.line.value - a.line.value);
   const focused = pattern === null ? [] : ranked.filter((entry) => entry.line.pattern === pattern);
-  return focused.length || (strict && pattern !== null) ? focused : ranked;
+  return focused.length ? focused : ranked;
 }
 
 /** Lists the tiles still missing from a line, such as "2 × 4 Bamboo". */
@@ -2950,9 +2948,9 @@ function describeAmericanNeeds(progress) {
     .join(", ");
 }
 
-/** The pattern every player aims for: the chosen target, or null so each player follows its own closest line. */
-function americanFocusFor() {
-  return activeTargetPattern();
+/** The pattern a player aims for: your seat follows the chosen target; bots, and Default, follow their own closest line. */
+function americanFocusFor(player) {
+  return player === game.players[0] ? activeTargetPattern() : null;
 }
 
 /** Picks the tiles least useful to the closest card lines for a discard or pass. */
@@ -3003,7 +3001,7 @@ function americanClaimChoice(player, options, discardTile) {
     if (option.type === "win") continue;
     const used = new Set(option.tiles.map((tile) => tile.id));
     const melds = [...player.melds, { tiles: [...option.tiles, discardTile], targetKey: option.targetKey }];
-    const after = rankAmericanLines(player.hand.filter((tile) => !used.has(tile.id)), melds, focus, true)[0];
+    const after = rankAmericanLines(player.hand.filter((tile) => !used.has(tile.id)), melds, focus)[0];
     if (after && (!bestClaim || after.need < bestClaim.after.need)) bestClaim = { option, after };
   }
   const helps = Boolean(bestClaim && before && bestClaim.after.need < before.need);
@@ -4380,6 +4378,7 @@ function renderAmericanCardTarget() {
   } else if (game.card) {
     const pattern = activeTargetPattern();
     const line = pattern === null ? null : game.card.find((item) => item.pattern === pattern);
+    if (line) heading = "Your target · any card pattern wins";
     definition = line ? americanPatternDefinition(line) : "Default: any pattern on the card";
   } else {
     const sets = `${variant.meldsToWin} ${variant.mode === "american" ? "matching sets" : "sets"}`;
