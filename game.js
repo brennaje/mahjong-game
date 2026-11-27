@@ -140,6 +140,8 @@ let cardLibrary = null;
 const parsedCardTexts = new Map();
 const styledCardLines = new WeakMap();
 const CONCEALED_BONUS = 10;
+/** Target menu value (and saved target) meaning "pick the pattern my hand is most likely to complete". */
+const AUTO_TARGET = "*best*";
 let undoState = null;
 let undoContinuation = null;
 let botTimer = null;
@@ -462,6 +464,7 @@ function dealAmericanTiles() {
   game.players[game.dealer].drawnTileId = null;
   game.players[game.dealer].lastDrawnTileId = null;
   pendingTileAnimations = [];
+  pickAutoTarget();
   game.phase = "charleston";
   game.current = 0;
   render();
@@ -564,6 +567,7 @@ function announceCharleston(message, playerIndex = 0) {
 
 /** Completes the passing phase and lets East discard the first tile. */
 function finishCharleston() {
+  pickAutoTarget();
   game.phase = "discard";
   game.current = game.dealer;
   game.players[game.dealer].drawnTileId = null;
@@ -2149,7 +2153,12 @@ function findClaims(discard) {
   for (const matchesTier of tiers) {
     for (const candidate of candidates) {
       const options = candidate.options.filter(matchesTier);
-      if (options.length > 0) {
+      if (options.length === 0) continue;
+      // Back-to-back claims by one player share a prompt; priority is unchanged.
+      const previous = claims[claims.length - 1];
+      if (previous?.player === candidate.player) {
+        previous.options.push(...options);
+      } else {
         claims.push({ player: candidate.player, options });
       }
     }
@@ -2916,10 +2925,66 @@ function americanLineName(line) {
   return line.name ?? (line.pattern ? `Line ${line.pattern}` : "Card line");
 }
 
-/** Returns the pattern chosen in the target menu, or null for "Default". */
+/** Returns the pattern chosen in the target menu (or picked for "Best for my hand"), or null for "Default". */
 function chosenAmericanPattern() {
   const value = elements.americanCardTarget.value;
+  if (value === AUTO_TARGET) return game?.autoTarget ?? null;
   return value === "" ? null : Number(value);
+}
+
+/** Counts the tiles of each kind a player has not seen: the full set minus their hand, every exposure, and unclaimed discards. */
+function unseenAmericanCounts(player) {
+  const counts = new Map();
+  const kind = (tile) => tile.type === "joker" ? "joker" : AmericanCard.key(tile);
+  for (const tile of createTiles("american")) counts.set(kind(tile), (counts.get(kind(tile)) ?? 0) + 1);
+  const seen = [
+    ...player.hand,
+    ...game.players.flatMap((seat) => seat.melds.flatMap((meld) => meld.tiles)),
+    ...game.discards.filter((discard) => !discard.claimed).map((discard) => discard.tile)
+  ];
+  for (const tile of seen) counts.set(kind(tile), (counts.get(kind(tile)) ?? 0) - 1);
+  return counts;
+}
+
+/**
+ * Estimates how hard a card line is to finish: each missing tile costs 1, plus 1 ÷ the unseen copies that could fill it
+ * (jokers count for groups of three or more). A missing tile with no unseen copies makes the line impossible.
+ */
+function americanLineEffort(progress, unseen) {
+  const left = new Map(unseen);
+  let effort = progress.need;
+  for (const group of [...progress.groups].sort((a, b) => a.size - b.size)) {
+    if (group.exposed) continue;
+    for (let missing = group.size - group.tiles.length; missing > 0; missing -= 1) {
+      const naturals = left.get(group.key) ?? 0;
+      const jokers = group.size >= 3 ? left.get("joker") ?? 0 : 0;
+      if (naturals + jokers <= 0) return Infinity;
+      effort += 1 / (naturals + jokers);
+      if (naturals > 0) left.set(group.key, naturals - 1);
+      else left.set("joker", jokers - 1);
+    }
+  }
+  return effort;
+}
+
+/** Picks the card pattern a player is most likely to complete, preferring higher points on a tie; null without a card. */
+function bestAmericanPattern(player) {
+  if (!game?.card) return null;
+  const unseen = unseenAmericanCounts(player);
+  let best = null;
+  for (const line of game.card) {
+    const progress = AmericanCard.progress(line, player.hand, player.melds);
+    if (!progress) continue;
+    const effort = americanLineEffort(progress, unseen);
+    if (!best || effort < best.effort || (effort === best.effort && line.value > best.line.value)) best = { line, effort };
+  }
+  return best && best.effort !== Infinity ? best.line.pattern : null;
+}
+
+/** Chooses your "Best for my hand" target from your current tiles; called after the deal and again after the Charleston. */
+function pickAutoTarget() {
+  if (game?.variantId !== "american") return;
+  game.autoTarget = bestAmericanPattern(game.players[0]);
 }
 
 /** Your seat's chosen target pattern on the active card, or null for "Default". */
@@ -4181,7 +4246,7 @@ function makeCardExample(line, title, progress = null) {
     }
     groupContainer.append(groupElement);
   }
-  example.append(label, groupContainer);
+  example.append(...(title ? [label] : []), groupContainer);
   return example;
 }
 
@@ -4189,7 +4254,7 @@ function makeCardExample(line, title, progress = null) {
 function defaultCardLibrary(legacyText = null) {
   const cards = [{ id: BUILT_IN_CARD_ID, name: "2026 card (your list)", text: AmericanCard.defaultCardText, builtIn: true }];
   if (legacyText) cards.push({ id: "card-private", name: "My private card", text: legacyText, builtIn: false });
-  return { format: AMERICAN_LIBRARY_FORMAT, version: 1, selectedId: BUILT_IN_CARD_ID, target: "", handStyle: "exposed", cards };
+  return { format: AMERICAN_LIBRARY_FORMAT, version: 1, selectedId: BUILT_IN_CARD_ID, target: AUTO_TARGET, autoTargetOffered: true, handStyle: "exposed", cards };
 }
 
 function isCardLibrary(data) {
@@ -4210,6 +4275,16 @@ function loadCardLibrary() {
       if (!data.cards.some((card) => card.id === BUILT_IN_CARD_ID)) data.cards.unshift(defaultCardLibrary().cards[0]);
       for (const card of data.cards) card.builtIn = card.id === BUILT_IN_CARD_ID;
       data.handStyle = data.handStyle === "concealed" ? "concealed" : "exposed";
+      if (!data.autoTargetOffered) {
+        // Libraries saved before "Best for my hand" existed switch from Default to it once.
+        if (data.target === "") data.target = AUTO_TARGET;
+        data.autoTargetOffered = true;
+        try {
+          localStorage.setItem(AMERICAN_LIBRARY_STORAGE, JSON.stringify(data));
+        } catch {
+          // Unsaved, it switches again next time; the loaded library is still usable.
+        }
+      }
       return { library: data, message: "" };
     }
     let legacyText = null;
@@ -4404,26 +4479,47 @@ function renderAmericanCardTarget() {
   const variant = VARIANTS[game.variantId];
   let heading = "Pattern to win";
   let definition;
+  let example = null;
   if (game.card && game.winner !== null && game.winningLine) {
     heading = `${game.players[game.winner].name} won with`;
     definition = americanPatternDefinition(game.winningLine);
   } else if (game.card) {
+    const auto = elements.americanCardTarget.value === AUTO_TARGET;
     const pattern = activeTargetPattern();
     const line = pattern === null ? null : game.card.find((item) => item.pattern === pattern);
-    if (line) heading = "Your target · any card pattern wins";
     const style = game.handStyle === "concealed" ? "concealed (C)" : "exposed (X)";
-    definition = line ? americanPatternDefinition(line) : `Default: any ${style} pattern on the card`;
+    if (line) {
+      heading = auto ? "Best for your hand · any card pattern wins" : "Your target · any card pattern wins";
+      definition = americanPatternDefinition(line);
+      // Show the suit variation you are closest to, dimming the tiles you still need.
+      const you = game.players[0];
+      const progress = rankAmericanLines(you.hand, you.melds, pattern)[0];
+      const closest = progress?.line.pattern === pattern ? progress : null;
+      example = makeCardExample(closest?.line ?? line, "", closest);
+    } else if (auto) {
+      definition = game.phase === "setup" ? "Best for my hand: picked after the deal"
+        : `No card pattern fits your tiles; any ${style} pattern on the card wins`;
+    } else {
+      definition = `Default: any ${style} pattern on the card`;
+    }
   } else {
     const sets = `${variant.meldsToWin} ${variant.mode === "american" ? "matching sets" : "sets"}`;
     definition = `Default: ${sets} + pair${variant.mode === "riichi" ? " · riichi or a yaku" : ""}`;
   }
   const label = document.createElement("div");
   label.className = "pattern-text-heading";
-  label.textContent = heading;
+  const [main, ...extra] = heading.split(" · ");
+  label.textContent = main;
+  if (extra.length) {
+    const more = document.createElement("span");
+    more.className = "pattern-heading-extra";
+    more.textContent = ` · ${extra.join(" · ")}`;
+    label.append(more);
+  }
   const text = document.createElement("div");
   text.className = "pattern-text";
   text.textContent = definition;
-  elements.americanCardTargetExample.replaceChildren(label, text);
+  elements.americanCardTargetExample.replaceChildren(label, text, ...(example ? [example] : []));
   elements.cardTargetBanner.closest(".table-center")?.classList.add("has-card-target");
   elements.cardTargetBanner.hidden = false;
 }
@@ -4440,6 +4536,7 @@ function updateAmericanCardTargets() {
     americanTargetCard = card;
     const options = card
       ? [
+        new Option("Best for my hand (auto)", AUTO_TARGET),
         new Option("Default", ""),
         ...AmericanCard.patterns(card).map((pattern) => new Option(
           `${pattern.name} · ${pattern.value} pts${pattern.concealed ? " · concealed" : ""}`, String(pattern.id)))
@@ -4449,7 +4546,8 @@ function updateAmericanCardTargets() {
     elements.americanCardTarget.disabled = !card;
     if (card) {
       const saved = cardLibrary.target;
-      const match = AmericanCard.patterns(card).find((pattern) => pattern.name === saved)?.id;
+      const match = saved === AUTO_TARGET ? AUTO_TARGET
+        : AmericanCard.patterns(card).find((pattern) => pattern.name === saved)?.id;
       elements.americanCardTarget.value = match === undefined ? "" : String(match);
     }
   }
@@ -4556,7 +4654,7 @@ elements.americanCardSource.addEventListener("change", () => {
 });
 elements.americanCardTarget.addEventListener("change", () => {
   const value = elements.americanCardTarget.value;
-  cardLibrary.target = value === "" ? ""
+  cardLibrary.target = value === "" || value === AUTO_TARGET ? value
     : AmericanCard.patterns(americanTargetCard).find((pattern) => String(pattern.id) === value)?.name ?? "";
   try {
     saveCardLibrary();

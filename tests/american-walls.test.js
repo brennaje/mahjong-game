@@ -89,7 +89,8 @@ test("dealing leaves 99 wall tiles and gives East the extra tile", () => {
         game.players[player].lastDrawnTileId = tile.id;
       },
       render() {},
-      announceCharleston: (message) => messages.push(message)
+      announceCharleston: (message) => messages.push(message),
+      pickAutoTarget() {}
     });
     implementation("function dealAmericanTiles()", "const CHARLESTON_DIRECTIONS", context);
     context.dealAmericanTiles();

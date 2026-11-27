@@ -37,7 +37,8 @@ function setup() {
       .slice(0, 3),
     render() {},
     narrateTurn() {},
-    scheduleBotTurn() {}
+    scheduleBotTurn() {},
+    pickAutoTarget() {}
   });
   vm.runInContext(source.slice(start, end), context);
   return { context, game };

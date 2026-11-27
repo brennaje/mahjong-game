@@ -167,8 +167,9 @@ test("the human hand remains visible and reorderable but cannot be discarded dur
 test("any card line wins and only your seat focuses on the chosen target", () => {
   const target = { value: "7" };
   const context = vm.createContext({
-    game: { card: [{ pattern: 3 }, { pattern: 7 }], players: [{}, {}] },
+    game: { card: [{ pattern: 3 }, { pattern: 7 }], players: [{}, {}], autoTarget: 3 },
     elements: { americanCardTarget: target },
+    AUTO_TARGET: "*best*",
     AmericanCard: { winningLines: () => [{ line: { pattern: 3 } }, { line: { pattern: 7 } }] }
   });
   implementation("function chosenAmericanPattern(", "/** Ranks the active card's lines", context);
@@ -178,6 +179,8 @@ test("any card line wins and only your seat focuses on the chosen target", () =>
   assert.equal(context.americanFocusFor(context.game.players[1]), null);
   target.value = "";
   assert.equal(context.americanFocusFor(context.game.players[0]), null);
+  target.value = "*best*";
+  assert.equal(context.americanFocusFor(context.game.players[0]), 3);
 });
 
 test("hand type limits the card to X or C patterns, playing X patterns concealed for a bonus when no C exists", () => {
@@ -192,4 +195,53 @@ test("hand type limits the card to X or C patterns, playing X patterns concealed
   assert.equal(concealed[0].concealed, true);
   assert.equal(concealed[0].value, 35);
   assert.equal(exposedOnly[0].value, 25);
+});
+
+test("Best for my hand picks the closest pattern that can still be completed", () => {
+  let id = 0;
+  const tile = (type, value) => ({ id: id++, type, value });
+  const copies = (type, value, count) => Array.from({ length: count }, () => tile(type, value));
+  const card = AmericanCard.parse([
+    "25 | X | regular | C1:2 C2:3 C3:3 C4:3 C5:3",
+    "25 | X | regular | B1:2 C2:3 C3:3 C4:3 C5:3"
+  ].join("\n"));
+  const you = { hand: [...copies("characters", 1, 1), ...[2, 3, 4, 5].flatMap((value) => copies("characters", value, 3))], melds: [] };
+  const game = { variantId: "american", card, players: [you], discards: [] };
+  const context = vm.createContext({
+    game, AmericanCard,
+    createTiles: () => ["characters", "bamboo"].flatMap((type) =>
+      Array.from({ length: 9 }, (_, index) => copies(type, index + 1, 4)).flat()).concat(copies("joker", 0, 8))
+  });
+  implementation("function unseenAmericanCounts(", "/** Your seat's chosen target pattern", context);
+  context.pickAutoTarget();
+  assert.equal(game.autoTarget, card[0].pattern);
+  game.discards = copies("characters", 1, 3).map((discard) => ({ tile: discard, claimed: false }));
+  context.pickAutoTarget();
+  assert.equal(game.autoTarget, card[1].pattern);
+});
+
+test("one player's pung and chow claims share a prompt unless another claim comes between", () => {
+  const tile = (id, type, value) => ({ id, type, value });
+  const hand = (...tiles) => ({ hand: tiles, melds: [] });
+  const game = { variantId: "chinese-classical", card: null, players: [] };
+  const context = vm.createContext({
+    game,
+    VARIANTS: { "chinese-classical": { mode: "standard" } },
+    isWinningHand: () => false,
+    sameTile: (a, b) => a.type === b.type && a.value === b.value
+  });
+  implementation("function findClaims(", "/** Declines the current claim", context);
+  const discard = { player: 3, tile: tile(99, "bamboo", 5) };
+  game.players = [
+    hand(tile(1, "bamboo", 5), tile(2, "bamboo", 5), tile(3, "bamboo", 6), tile(4, "bamboo", 7)),
+    hand(), hand(), hand()
+  ];
+  const merged = context.findClaims(discard);
+  assert.equal(merged.length, 1);
+  assert.deepEqual([...merged[0].options.map((option) => option.type)], ["pung", "chow"]);
+
+  game.players[1] = hand(tile(5, "bamboo", 5), tile(6, "bamboo", 5));
+  const split = context.findClaims(discard);
+  assert.deepEqual([...split.map((claim) => claim.player)], [0, 1, 0]);
+  assert.deepEqual([...split[2].options.map((option) => option.type)], ["chow"]);
 });

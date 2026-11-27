@@ -906,6 +906,27 @@ body.bot-test-running #hand {
   filter: grayscale(0.7);
 }
 
+/* Target tiles in the center fill about two rows of the banner width. */
+#american-card-target-example .card-example {
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+}
+
+#american-card-target-example .card-example-groups {
+  --target-tile-w: clamp(10px, calc((100cqi - 12px) / round(up, var(--example-slots) / 2, 1)), 26px);
+  justify-content: center;
+  gap: calc(var(--target-tile-w) * 0.5);
+  margin-top: 0;
+}
+
+#american-card-target-example .card-example-group .tile {
+  width: var(--target-tile-w);
+  height: calc(var(--target-tile-w) * 1.4);
+  border-bottom-width: 1px;
+  border-radius: 2px;
+}
+
 
 .table-center.has-card-target .lantern {
   display: none;
@@ -1579,6 +1600,19 @@ body[data-layout="iphone"] #american-card-target-example {
 
 body[data-layout="iphone"] .pattern-text-heading {
   font-size: 0.55rem;
+}
+
+body[data-layout="iphone"] .pattern-heading-extra {
+  display: none;
+}
+
+body[data-layout="iphone"] .pattern-text {
+  font-size: clamp(0.6rem, 3.6cqi, 0.8rem);
+  line-height: 1.15;
+}
+
+body[data-layout="iphone"] #american-card-target-example .card-example-groups {
+  --target-tile-w: clamp(9px, calc((100cqi - 12px) / var(--example-slots)), 20px);
 }
 
 body[data-layout="iphone"] .board:has(.table-center.has-card-target) {
