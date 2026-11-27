@@ -465,6 +465,7 @@ function dealAmericanTiles() {
   game.players[game.dealer].lastDrawnTileId = null;
   pendingTileAnimations = [];
   pickAutoTarget();
+  game.dealAutoTarget = game.autoTarget;
   game.phase = "charleston";
   game.current = 0;
   render();
@@ -539,6 +540,7 @@ function passCharleston(blind = false) {
   }
   game.charlestonSelection = [];
   game.charlestonStep += 1;
+  pickAutoTarget();
   if (game.charlestonStep === 3) {
     game.phase = "charleston-choice";
   } else if (game.charlestonStep === 6) {
@@ -572,7 +574,7 @@ function finishCharleston() {
   game.current = game.dealer;
   game.players[game.dealer].drawnTileId = null;
   const subject = game.dealer === 0 ? "You are" : `${game.players[game.dealer].name} is`;
-  announceCharleston(`Charleston complete. ${subject} East and discard first.`, game.dealer);
+  announceCharleston(`Charleston complete. ${autoTargetSummary()}${subject} East and discard first.`, game.dealer);
   render();
   scheduleBotTurn();
 }
@@ -978,6 +980,7 @@ function renderPatternExamples() {
 
 /** Renders the current game state and stages its tile animations. */
 function render() {
+  if (elements.americanCardTarget.value === AUTO_TARGET) pickAutoTarget();
   ensureReviewDecision();
   const recommendation = getTutorRecommendation();
   renderPlayers();
@@ -2981,10 +2984,21 @@ function bestAmericanPattern(player) {
   return best && best.effort !== Infinity ? best.line.pattern : null;
 }
 
-/** Chooses your "Best for my hand" target from your current tiles; called after the deal and again after the Charleston. */
+/** Refreshes your automatic target from your current tiles and the remaining unseen tiles. */
 function pickAutoTarget() {
-  if (game?.variantId !== "american") return;
+  if (game?.variantId !== "american" || game.phase === "setup" || game.winner != null) return;
   game.autoTarget = bestAmericanPattern(game.players[0]);
+}
+
+/** Says whether the Charleston changed your "Best for my hand" target, or "" when auto is off. */
+function autoTargetSummary() {
+  if (game?.variantId !== "american" || elements.americanCardTarget.value !== AUTO_TARGET) return "";
+  const line = game.card?.find((item) => item.pattern === game.autoTarget);
+  if (!line) return "No card pattern fits your tiles yet. ";
+  const name = `${americanLineName(line).split(":")[0]} (${line.value} points)`;
+  return game.autoTarget === game.dealAutoTarget
+    ? `Your best target is still ${name}. `
+    : `Your best target changed to ${name}. `;
 }
 
 /** Your seat's chosen target pattern on the active card, or null for "Default". */
@@ -4661,10 +4675,7 @@ elements.americanCardTarget.addEventListener("change", () => {
   } catch (error) {
     elements.americanCardStatus.textContent = `Target choice could not be saved: ${error.message}`;
   }
-  const recommendation = getTutorRecommendation();
-  renderHand(recommendation);
-  renderTutor(recommendation);
-  renderAmericanCardTarget();
+  render();
 });
 elements.americanHandStyle.addEventListener("change", () => {
   cardLibrary.handStyle = elements.americanHandStyle.value === "concealed" ? "concealed" : "exposed";

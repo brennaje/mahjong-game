@@ -197,7 +197,7 @@ test("hand type limits the card to X or C patterns, playing X patterns concealed
   assert.equal(exposedOnly[0].value, 25);
 });
 
-test("Best for my hand picks the closest pattern that can still be completed", () => {
+test("automatic target refreshes before the tutor and board as tiles and availability change", () => {
   let id = 0;
   const tile = (type, value) => ({ id: id++, type, value });
   const copies = (type, value, count) => Array.from({ length: count }, () => tile(type, value));
@@ -206,18 +206,54 @@ test("Best for my hand picks the closest pattern that can still be completed", (
     "25 | X | regular | B1:2 C2:3 C3:3 C4:3 C5:3"
   ].join("\n"));
   const you = { hand: [...copies("characters", 1, 1), ...[2, 3, 4, 5].flatMap((value) => copies("characters", value, 3))], melds: [] };
-  const game = { variantId: "american", card, players: [you], discards: [] };
+  const game = { variantId: "american", card, players: [you], discards: [], phase: "discard", winner: null };
+  const target = { value: "*best*" };
+  const displayed = [];
+  const advised = [];
   const context = vm.createContext({
     game, AmericanCard,
+    AUTO_TARGET: "*best*",
+    elements: {
+      americanCardTarget: target, roundLabel: {}, privacyScreen: {}
+    },
+    VARIANTS: { american: { label: "American" } },
+    ensureReviewDecision() {},
+    getTutorRecommendation() { advised.push(game.autoTarget); },
+    renderPlayers() {}, renderDiscards() {}, renderHand() {}, renderMelds() {},
+    renderActions() {}, renderTutor() {}, renderWall() {}, updateVariantNote() {},
+    updateTurnMessage() {}, preparePendingTileAnimations() {},
+    updateAmericanCardTargets() { displayed.push(game.autoTarget); },
     createTiles: () => ["characters", "bamboo"].flatMap((type) =>
       Array.from({ length: 9 }, (_, index) => copies(type, index + 1, 4)).flat()).concat(copies("joker", 0, 8))
   });
+  game.dealer = 0;
+  implementation("function render() {", "/** Renders the remaining face-down tiles", context);
   implementation("function unseenAmericanCounts(", "/** Your seat's chosen target pattern", context);
-  context.pickAutoTarget();
+  context.render();
+  assert.equal(game.autoTarget, card[0].pattern);
+  you.hand[0] = tile("bamboo", 1);
+  context.render();
+  assert.equal(game.autoTarget, card[1].pattern);
+  you.hand[0] = tile("characters", 1);
+  context.render();
   assert.equal(game.autoTarget, card[0].pattern);
   game.discards = copies("characters", 1, 3).map((discard) => ({ tile: discard, claimed: false }));
-  context.pickAutoTarget();
+  context.render();
   assert.equal(game.autoTarget, card[1].pattern);
+  assert.deepEqual(advised, [card[0].pattern, card[1].pattern, card[0].pattern, card[1].pattern]);
+  assert.deepEqual(displayed, advised);
+
+  game.discards = [];
+  target.value = String(card[1].pattern);
+  context.render();
+  assert.equal(game.autoTarget, card[1].pattern);
+  target.value = "*best*";
+  context.render();
+  assert.equal(game.autoTarget, card[0].pattern);
+  game.winner = 0;
+  you.hand[0] = tile("bamboo", 1);
+  context.render();
+  assert.equal(game.autoTarget, card[0].pattern);
 });
 
 test("one player's pung and chow claims share a prompt unless another claim comes between", () => {
