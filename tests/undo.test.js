@@ -94,6 +94,78 @@ test("undoing a passed claim returns to the same claim", () => {
   assert.equal(context.undoContinuation, null);
 });
 
+function queuedDrawContext(game) {
+  const context = undoContext(game);
+  Object.assign(context, {
+    possessivePlayerName: () => "Alex's", tileDescription: () => "tile",
+    recordHumanWin() {}, narrateTurn() {}, scheduleBotTurn() {},
+    VARIANTS: { american: { flowersReplace: false } }
+  });
+  load(context, "function passClaim(", "/** Applies a selected meld claim");
+  load(context, "function advanceAfterDiscard(", "/** Records a completed hand");
+  load(context, "function drawFor(", "/** Returns the matching key");
+  return context;
+}
+
+test("Draw after passing waits through other claims and turns, draws once, and remains undoable", () => {
+  for (const discarder of [1, 2, 3]) {
+    const game = {
+      variantId: "american", phase: "claim", current: 0, winner: null,
+      pendingDiscard: { player: discarder, tile: { id: 9 } },
+      wall: [{ id: 10 }, { id: 11 }, { id: 12 }],
+      claimQueue: [{ player: 0 }, { player: 2 }], claimIndex: 0,
+      players: ["You", "Alex", "Jordan", "Morgan"].map((name) => ({ name, hand: [], flowers: [] }))
+    };
+    const context = queuedDrawContext(game);
+    context.passClaim();
+    assert.ok(context.undoState);
+    context.requestDrawAfterPass();
+    assert.equal(game.phase, "claim");
+    assert.equal(game.current, 2);
+    assert.equal(game.wall.length, 3, "a queued draw must not preempt another player's claim");
+    assert.equal(game.players[0].hand.length, 0);
+    assert.equal(context.undoState, null);
+    context.requestDrawAfterPass();
+    assert.equal(game.claimIndex, 1, "repeated clicks must not advance twice");
+    context.passClaim();
+    assert.equal(game.current, (discarder + 1) % 4);
+    if (discarder !== 3) {
+      assert.equal(game.players[0].hand.length, 0, "intervening players must get their own draws");
+      context.beginPlayerDraw(0);
+    }
+    assert.equal(game.phase, "discard");
+    assert.equal(game.players[0].hand.length, 1);
+    assert.equal(game.drawAfterPassRequested, false);
+    context.drawHumanTile();
+    assert.equal(game.players[0].hand.length, 1, "only one draw is allowed");
+    context.undoLastMove();
+    assert.equal(context.game.phase, "awaiting-draw");
+    assert.equal(context.game.players[0].hand.length, 0);
+    assert.equal(context.game.drawAfterPassRequested, false);
+  }
+});
+
+test("a new human claim stops a queued draw and an empty wall never grants one", () => {
+  const game = {
+    variantId: "american", phase: "claim", current: 0, winner: null,
+    pendingDiscard: { player: 1, tile: { id: 9 } }, wall: [],
+    claimQueue: [{ player: 0 }, { player: 2 }, { player: 0 }], claimIndex: 0,
+    players: ["You", "Alex", "Jordan"].map((name) => ({ name, hand: [], flowers: [] }))
+  };
+  const context = queuedDrawContext(game);
+  context.passClaim();
+  context.requestDrawAfterPass();
+  context.passClaim();
+  assert.equal(game.current, 0);
+  assert.equal(game.phase, "claim");
+  assert.equal(game.drawAfterPassRequested, false);
+  game.drawAfterPassRequested = true;
+  context.beginPlayerDraw(0);
+  assert.equal(game.phase, "draw");
+  assert.equal(game.drawAfterPassRequested, false);
+  assert.equal(game.players[0].hand.length, 0);
+});
+
 test("passing the last claim on your predecessor's discard offers your draw immediately and remains undoable", () => {
     for (const discarder of [1, 2, 3]) {
       const game = {

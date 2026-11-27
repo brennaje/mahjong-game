@@ -631,8 +631,13 @@ function beginPlayerDraw(playerIndex) {
     game.phase = "awaiting-draw";
     game.players[0].drawnTileId = null;
     game.privacyRequired = false;
+    if (game.drawAfterPassRequested) {
+      game.drawAfterPassRequested = false;
+      drawHumanTile();
+    }
     return;
   }
+  if (game.wall.length === 0) game.drawAfterPassRequested = false;
   drawFor(playerIndex);
 }
 
@@ -1672,7 +1677,7 @@ function renderHand(recommendation) {
     ? "Choose Deal tiles to deal the hands and begin the Charleston."
     : game.phase === "charleston"
     ? "Select up to three non-joker tiles to pass. On the final pass, you may blind pass tiles received from another player."
-    : "Click Draw when it is your turn to draw, then click a tile to discard. Drag tiles at any time to arrange them; use Alt+Left/Right when a tile is focused.";
+    : "Click Draw, then click a tile to discard. Tiles arrange toward your target when your hand or target changes, with unused tiles last. Drag to adjust until the next change; use Alt+Left/Right when a tile is focused.";
   if (game.privacyRequired || game.winner === 0) {
     return;
   }
@@ -1728,9 +1733,20 @@ function renderHand(recommendation) {
   }
 }
 
-/** Returns the human's hand in saved display order, adding new tiles at the end. */
+/** Returns the human's hand in target order after changes, preserving manual order between changes. */
 function orderedHumanHand(hand) {
   const tiles = sortedHand(hand);
+  if (!tiles.length) return tiles;
+  const player = game.players[0];
+  const signature = JSON.stringify([
+    game.variantId, game.card ? americanFocusFor(player) : null,
+    tiles.map((tile) => tile.id),
+    player.melds.map((meld) => meld.tiles.map((tile) => tile.id))
+  ]);
+  if (game.humanHandArrangementKey !== signature) {
+    humanHandOrder = plannedHumanTiles(tiles).map((tile) => tile.id);
+    game.humanHandArrangementKey = signature;
+  }
   const tilesById = new Map(tiles.map((tile) => [tile.id, tile]));
   humanHandOrder = humanHandOrder.filter((tileId) => tilesById.has(tileId));
   const orderedIds = new Set(humanHandOrder);
@@ -1741,6 +1757,31 @@ function orderedHumanHand(hand) {
     }
   }
   return humanHandOrder.map((tileId) => tilesById.get(tileId));
+}
+
+function plannedHumanTiles(tiles) {
+  const player = game.players[0];
+  const remaining = new Map(tiles.map((tile) => [tile.id, tile]));
+  const ordered = [];
+  const take = (tile) => {
+    if (!tile || !remaining.delete(tile.id)) return;
+    ordered.push(tile);
+  };
+  if (game.card) {
+    const best = rankAmericanLines(tiles, player.melds, americanFocusFor(player))[0];
+    for (const group of best?.groups ?? []) {
+      if (!group.exposed) group.tiles.forEach(take);
+    }
+  } else {
+    for (const group of planWinningHand(0).groups) {
+      for (const slot of group.tiles) {
+        if (!slot.held) continue;
+        take([...remaining.values()].find((tile) =>
+          slot.joker ? tile.type === "joker" : tileKey(tile) === slot.key));
+      }
+    }
+  }
+  return [...ordered, ...remaining.values()];
 }
 
 /** Saves the current human-hand tile order after rearranging it. */
@@ -1791,15 +1832,20 @@ function renderActions() {
   if (undoState) addAction("Undo", undoLastMove, true);
   if (undoContinuation) {
     if (undoContinuation === advanceClaimQueue) {
-      elements.undoStatus.textContent = "Claim passed. Continue to resolve other claims and resume turn order; passing does not itself grant a draw.";
+      elements.undoStatus.textContent = "Claim passed. Choose Draw to finish remaining claims and turns, then draw on your next legal turn. Undo is available until you choose Draw.";
     }
-    addAction(undoContinuation === advanceClaimQueue ? "Continue after pass" : "Continue", continueAfterMove);
+    addAction(undoContinuation === advanceClaimQueue ? "Draw" : "Continue",
+      undoContinuation === advanceClaimQueue ? requestDrawAfterPass : continueAfterMove);
     return;
   }
   if (game.winner !== null) {
     addAction(game.reviewOpen ? "Hide game review" : "Game review", toggleGameReview, true);
     addAction("Next hand", nextHand);
     return;
+  }
+  if (game.drawAfterPassRequested) {
+    elements.undoStatus.textContent = "Draw queued for your next legal turn. Other players finish first; a new claim decision will stop the queued draw.";
+    addAction("Draw queued", requestDrawAfterPass, false, true);
   }
   if (game.privacyRequired || game.current !== 0) {
     return;
@@ -2110,6 +2156,7 @@ function resolveDiscardClaims() {
   if (game.claimQueue.length > 0) {
     game.phase = "claim";
     game.current = game.claimQueue[0].player;
+    if (game.current === 0) game.drawAfterPassRequested = false;
     game.privacyRequired = false;
     render();
     scheduleBotTurn();
@@ -2245,11 +2292,18 @@ function passClaim() {
   advanceClaimQueue();
 }
 
+function requestDrawAfterPass() {
+  if (undoContinuation !== advanceClaimQueue) return;
+  game.drawAfterPassRequested = true;
+  continueAfterMove();
+}
+
 function advanceClaimQueue() {
   game.claimIndex += 1;
   if (game.claimIndex < game.claimQueue.length) {
     game.phase = "claim";
     game.current = game.claimQueue[game.claimIndex].player;
+    if (game.current === 0) game.drawAfterPassRequested = false;
     game.privacyRequired = false;
     render();
     scheduleBotTurn();
@@ -4132,7 +4186,9 @@ function updateTurnMessage() {
   if (game.winner !== null) {
     elements.turnMessage.textContent = `${game.players[game.winner].name} wins the hand. ${game.scoreSummary}`;
   } else if (game.phase === "undo-pending") {
-    elements.turnMessage.textContent = "Your move is paused. Undo it or continue play.";
+    elements.turnMessage.textContent = undoContinuation === advanceClaimQueue
+      ? "Claim passed. Choose Draw for your next legal turn, or Undo."
+      : "Your move is paused. Undo it or continue play.";
   } else if (game.phase === "setup") {
     const east = game.dealer === 0 ? "You are" : `${game.players[game.dealer].name} is`;
     elements.turnMessage.textContent = `${east} East. Choose Deal tiles to begin.`;

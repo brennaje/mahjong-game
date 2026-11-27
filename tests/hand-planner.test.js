@@ -1,6 +1,9 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const HandPlanner = require("../hand-planner.js");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
 
 const counts = (keys) => keys.reduce((map, key) => map.set(key, (map.get(key) ?? 0) + 1), new Map());
 
@@ -31,4 +34,27 @@ test("American practice uses jokers for sets but not the pair, and no runs", () 
   assert.equal(runs.need, 2);
   assert.ok(runs.groups.every((group) => group.kind !== "chow"));
   assert.ok(runs.groups.find((group) => group.kind === "pair").tiles.every((tile) => tile.key === "wind-1" && !tile.joker));
+});
+
+test("human practice arrangement uses held planner slots without adding missing tiles or duplicating jokers", () => {
+  const hand = ["characters-1", "characters-2", "characters-3", "flower-0", "flower-0", "wind-1", "wind-1", "joker-0"]
+    .map((key, id) => {
+      const [type, value] = key.split("-");
+      return { id, type, value: Number(value) };
+    });
+  const plan = HandPlanner.plan({
+    counts: counts(hand.filter((tile) => tile.type !== "joker").map((tile) => `${tile.type}-${tile.value}`)),
+    sets: 2, sequences: false, jokers: 1, pairAllowed: (key) => key !== "flower-0"
+  });
+  const source = fs.readFileSync(path.join(__dirname, "..", "game.js"), "utf8");
+  const context = vm.createContext({
+    game: { players: [{ hand, melds: [] }] },
+    planWinningHand: () => plan,
+    tileKey: (tile) => `${tile.type}-${tile.value}`
+  });
+  vm.runInContext(source.slice(source.indexOf("function plannedHumanTiles("),
+    source.indexOf("/** Saves the current human-hand")), context);
+  const arranged = Array.from(context.plannedHumanTiles(hand), (tile) => tile.id);
+  assert.deepEqual(arranged, [0, 7, 5, 6, 3, 4, 1, 2]);
+  assert.equal(new Set(arranged).size, hand.length);
 });

@@ -14,6 +14,69 @@ function implementation(startMarker, endMarker, context) {
   vm.runInContext(source.slice(start, end), context);
 }
 
+test("human tiles follow target groups on deal, draw, and target changes, preserving manual order between changes", () => {
+  const tile = (id, type, value, sort) => ({ id, type, value, sort });
+  const hand = [
+    tile(1, "characters", 1, 1),
+    tile(2, "characters", 9, 9), tile(3, "characters", 9, 9),
+    tile(4, "bamboo", 2, 22), tile(5, "bamboo", 2, 22),
+    tile(6, "wind", 0, 30), tile(7, "wind", 0, 30),
+    tile(8, "dragon", 0, 40), tile(9, "dragon", 0, 40),
+    tile(10, "flower", 0, 50), tile(11, "flower", 1, 51),
+    tile(12, "joker", 0, 60), tile(13, "joker", 0, 60)
+  ];
+  const card = AmericanCard.parse([
+    "25 | X | regular | F:2 C9:3 B2:3 E:3 R:3",
+    "25 | X | regular | R:3 E:3 B2:3 C9:3 F:2"
+  ].join("\n"));
+  const game = { variantId: "american", card, players: [{ hand, melds: [] }] };
+  let target = 1;
+  const context = vm.createContext({
+    game, AmericanCard, humanHandOrder: [],
+    americanFocusFor: () => target,
+    sortedHand: (tiles) => [...tiles].sort((a, b) => a.sort - b.sort || a.id - b.id)
+  });
+  implementation("function rankAmericanLines(", "/** Lists the tiles still missing", context);
+  implementation("function orderedHumanHand(", "/** Saves the current human-hand", context);
+  const ids = () => Array.from(context.orderedHumanHand(hand), (item) => item.id);
+  assert.deepEqual(ids(), [10, 11, 2, 3, 12, 4, 5, 13, 6, 7, 8, 9, 1]);
+  context.humanHandOrder.reverse();
+  const manual = [...context.humanHandOrder];
+  assert.deepEqual(ids(), manual);
+  game.targetSuggestion = { pattern: 2 };
+  assert.deepEqual(ids(), manual, "an unaccepted suggestion must not rearrange tiles");
+  hand.push(tile(14, "characters", 9, 9));
+  assert.deepEqual(ids(), [10, 11, 2, 3, 14, 4, 5, 12, 6, 7, 13, 8, 9, 1]);
+  target = 2;
+  assert.deepEqual(ids(), [8, 9, 12, 6, 7, 13, 4, 5, 2, 3, 14, 10, 11, 1]);
+  assert.equal(new Set(ids()).size, hand.length);
+  assert.equal(hand.at(-1).id, 14, "display arrangement must not mutate the actual hand");
+});
+
+test("human arrangement excludes exposed groups and retains unmatched tiles when no card line fits", () => {
+  const hand = [
+    { id: 1, type: "characters", value: 1, sort: 1 },
+    { id: 2, type: "flower", value: 0, sort: 50 }
+  ];
+  const meld = { tiles: Array.from({ length: 3 }, (_, i) =>
+    ({ id: i + 3, type: "characters", value: 9 })), targetKey: "characters-9" };
+  const game = {
+    variantId: "american",
+    card: AmericanCard.parse("25 | X | regular | C9:3 F:2 B2:3 E:3 R:3"),
+    players: [{ hand, melds: [meld] }]
+  };
+  const context = vm.createContext({
+    game, AmericanCard, humanHandOrder: [], americanFocusFor: () => 1,
+    sortedHand: (tiles) => [...tiles].sort((a, b) => a.sort - b.sort)
+  });
+  implementation("function rankAmericanLines(", "/** Lists the tiles still missing", context);
+  implementation("function orderedHumanHand(", "/** Saves the current human-hand", context);
+  assert.deepEqual(Array.from(context.orderedHumanHand(hand), (item) => item.id), [2, 1]);
+  meld.tiles.forEach((item) => { item.value = 8; });
+  meld.targetKey = "characters-8";
+  assert.deepEqual(Array.from(context.plannedHumanTiles(hand), (item) => item.id), [1, 2]);
+});
+
 test("an American kong claim is followed by a discard, not a replacement draw", () => {
   for (const variantId of ["american", "chinese-classical"]) {
     const tiles = Array.from({ length: 14 }, (_, id) => ({ id, sort: id }));
