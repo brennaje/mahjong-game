@@ -26,6 +26,7 @@ function setup() {
     charlestonStep: 0,
     charlestonSelection: []
   };
+  let automaticSelections = 0;
   const context = vm.createContext({
     game,
     speechAvailable: false,
@@ -39,10 +40,11 @@ function setup() {
     narrateTurn() {},
     scheduleBotTurn() {},
     pickAutoTarget() {},
+    selectAutomaticAmericanTarget() { automaticSelections += 1; },
     autoTargetSummary: () => "",
   });
   vm.runInContext(source.slice(start, end), context);
-  return { context, game };
+  return { context, game, automaticSelections: () => automaticSelections };
 }
 
 test("first pass moves three selected tiles right and keeps jokers", () => {
@@ -80,7 +82,7 @@ test("blind passes forward unseen tiles only on the final pass", () => {
 });
 
 test("the optional second Charleston ends with East discarding", () => {
-  const { context, game } = setup();
+  const { context, game, automaticSelections } = setup();
   game.charlestonStep = 3;
   for (let step = 3; step < 6; step += 1) {
     game.players[0].hand.filter((tile) => tile.type !== "joker").slice(0, 3)
@@ -89,5 +91,15 @@ test("the optional second Charleston ends with East discarding", () => {
   }
   assert.equal(game.phase, "discard");
   assert.equal(game.current, game.dealer);
+  assert.equal(automaticSelections(), 1);
   assert.deepEqual(game.players.map((player) => player.hand.length), [14, 13, 13, 13]);
+});
+
+test("finishing after the first Charleston also restores automatic targeting", () => {
+  const { context, game, automaticSelections } = setup();
+  game.phase = "charleston-choice";
+  game.charlestonStep = 3;
+  context.finishCharleston();
+  assert.equal(automaticSelections(), 1);
+  assert.equal(game.phase, "discard");
 });

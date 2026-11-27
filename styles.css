@@ -892,6 +892,24 @@ body.bot-test-running #hand {
   text-transform: uppercase;
 }
 
+.target-suggestion {
+  padding: 8px;
+  border: 1px solid #e6ce91;
+  border-radius: 7px;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.target-suggestion p {
+  margin: 0 0 6px;
+}
+
+.target-suggestion button {
+  margin: 2px;
+  max-width: 100%;
+  white-space: normal;
+}
+
 .pattern-text {
   margin-top: 2px;
   color: #fff8e6;

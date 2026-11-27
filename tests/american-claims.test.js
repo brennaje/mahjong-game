@@ -197,7 +197,7 @@ test("hand type limits the card to X or C patterns, playing X patterns concealed
   assert.equal(exposedOnly[0].value, 25);
 });
 
-test("automatic target refreshes before the tutor and board as tiles and availability change", () => {
+test("better targets require consent during play, including keeping, accepting, and impossible targets", () => {
   let id = 0;
   const tile = (type, value) => ({ id: id++, type, value });
   const copies = (type, value, count) => Array.from({ length: count }, () => tile(type, value));
@@ -213,6 +213,7 @@ test("automatic target refreshes before the tutor and board as tiles and availab
   const context = vm.createContext({
     game, AmericanCard,
     AUTO_TARGET: "*best*",
+    cardLibrary: { target: "*best*" },
     elements: {
       americanCardTarget: target, roundLabel: {}, privacyScreen: {}
     },
@@ -228,25 +229,38 @@ test("automatic target refreshes before the tutor and board as tiles and availab
   });
   game.dealer = 0;
   implementation("function render() {", "/** Renders the remaining face-down tiles", context);
+  implementation("function chosenAmericanPattern(", "/** Counts the tiles", context);
   implementation("function unseenAmericanCounts(", "/** Your seat's chosen target pattern", context);
   context.render();
   assert.equal(game.autoTarget, card[0].pattern);
   you.hand[0] = tile("bamboo", 1);
   context.render();
+  assert.equal(game.autoTarget, card[0].pattern);
+  assert.equal(game.targetSuggestion.pattern, card[1].pattern);
+  context.answerTargetSuggestion(false);
+  assert.equal(game.targetSuggestion, null);
+  context.render();
+  assert.equal(game.targetSuggestion, null);
+  you.hand[0] = tile("bamboo", 1);
+  context.render();
+  assert.equal(game.targetSuggestion.pattern, card[1].pattern);
+  context.answerTargetSuggestion(true);
   assert.equal(game.autoTarget, card[1].pattern);
   you.hand[0] = tile("characters", 1);
   context.render();
-  assert.equal(game.autoTarget, card[0].pattern);
+  assert.equal(game.autoTarget, card[1].pattern);
+  assert.equal(game.targetSuggestion.pattern, card[0].pattern);
+  context.answerTargetSuggestion(true);
   game.discards = copies("characters", 1, 3).map((discard) => ({ tile: discard, claimed: false }));
   context.render();
-  assert.equal(game.autoTarget, card[1].pattern);
-  assert.deepEqual(advised, [card[0].pattern, card[1].pattern, card[0].pattern, card[1].pattern]);
+  assert.equal(game.autoTarget, card[0].pattern);
+  assert.equal(game.targetSuggestion.pattern, card[1].pattern);
   assert.deepEqual(displayed, advised);
 
   game.discards = [];
   target.value = String(card[1].pattern);
   context.render();
-  assert.equal(game.autoTarget, card[1].pattern);
+  assert.equal(game.targetSuggestion.pattern, card[0].pattern);
   target.value = "*best*";
   context.render();
   assert.equal(game.autoTarget, card[0].pattern);
@@ -254,6 +268,40 @@ test("automatic target refreshes before the tutor and board as tiles and availab
   you.hand[0] = tile("bamboo", 1);
   context.render();
   assert.equal(game.autoTarget, card[0].pattern);
+});
+
+test("starting automatic targeting replaces and saves a pinned pattern, with explicit storage errors", () => {
+  const pinned = "Even: FF 2222 44 66 8888";
+  const target = { value: "11" };
+  const library = { target: pinned };
+  let saves = 0;
+  const context = vm.createContext({
+    game: { variantId: "american", card: [{ pattern: 11 }] },
+    elements: { americanCardTarget: target, americanCardStatus: {} },
+    cardLibrary: library,
+    AUTO_TARGET: "*best*",
+    saveCardLibrary() { saves += 1; }
+  });
+  implementation("function selectAutomaticAmericanTarget(", "/** Says whether the Charleston", context);
+  context.selectAutomaticAmericanTarget();
+  assert.equal(target.value, "*best*");
+  assert.equal(library.target, "*best*");
+  assert.equal(saves, 1);
+  context.selectAutomaticAmericanTarget();
+  assert.equal(saves, 1);
+
+  library.target = pinned;
+  context.saveCardLibrary = () => { throw new Error("storage full"); };
+  context.selectAutomaticAmericanTarget();
+  assert.equal(target.value, "*best*");
+  assert.match(context.elements.americanCardStatus.textContent, /could not be saved: storage full/);
+
+  library.target = pinned;
+  target.value = "11";
+  context.game.variantId = "chinese-classical";
+  context.selectAutomaticAmericanTarget();
+  assert.equal(target.value, "11");
+  assert.equal(library.target, pinned);
 });
 
 test("one player's pung and chow claims share a prompt unless another claim comes between", () => {

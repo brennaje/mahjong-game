@@ -70,7 +70,8 @@
         </label>
       </div>
       <p id="american-card-note">Your saved cards stay in this browser. The pattern to win is shown in the center of the American table. Any card pattern wins for every player; the first to complete one wins. <strong>Best for my hand (auto)</strong> picks the pattern your dealt tiles are most likely to complete (fewest missing tiles, favoring tiles that are still available) and rechecks it after every Charleston pass, saying at the end whether it changed; the center shows it with tile images, dimming the tiles you still need. A named target is your own focus for the tutor; with <strong>Default</strong> you aim for your closest pattern. Bots always aim for their own closest pattern. <strong>Hand type</strong> applies to all four players from the next deal. <strong>Exposed (X)</strong> plays the X patterns: you may call discards to complete any group, called groups sit face up, and other players can swap jokers out of them. <strong>Concealed (C)</strong> plays the C patterns: you may call only your winning 14th tile, every tile stays hidden, and no one can swap your jokers. If a card has no C patterns, its X patterns are played concealed for +10 points.</p>
-      <p>To keep your target updating as your tiles change, select <strong>Best for my hand (auto)</strong>. It rechecks throughout play, not just during the Charleston. A named target stays fixed; an automatic target can stay the same if it is still your best option.</p>
+      <p>Each new hand, the deal, and the end of the Charleston automatically select <strong>Best for my hand (auto)</strong>, replacing any saved named target. During play, a better estimated pattern is offered beside your play controls: choose <strong>Change target</strong> or <strong>Keep my target</strong>. Your target and tutor focus will not change without your approval. Keeping a target dismisses that suggestion until your hand changes.</p>
+      <p>Passing a discard claim does not grant an extra draw. If you are next and no claims remain, choose <strong>Draw</strong>. Otherwise choose <strong>Continue after pass</strong> to resolve remaining claims and resume turn order. Another player's successful claim may skip your turn.</p>
       <details class="card-entry" id="card-entry">
         <summary>Edit, copy, import, or export cards</summary>
         <label for="american-card-name">Card name</label>
@@ -208,6 +209,7 @@
             <div class="melds" id="melds"></div>
             <p class="hand-help" id="hand-help">Click Draw when it is your turn to draw, then click a tile to discard. Drag tiles at any time to arrange them; use Alt+Left/Right when a tile is focused.</p>
             <div class="hand" id="hand" aria-label="Your tiles" aria-describedby="hand-help"></div>
+            <div class="target-suggestion" id="target-suggestion" hidden></div>
             <div class="actions" id="actions"></div>
             <section class="game-review" id="game-review" aria-labelledby="game-review-title" hidden>
               <h2 id="game-review-title">Game review</h2>

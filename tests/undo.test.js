@@ -85,6 +85,7 @@ test("undoing a passed claim returns to the same claim", () => {
     possessivePlayerName: () => "Alex's", tileDescription: () => "tile",
     recordHumanWin() {}, narrateTurn() {}, scheduleBotTurn() {}, advanceAfterDiscard() {}
   });
+
   load(context, "function passClaim(", "/** Applies a selected meld claim");
   context.passClaim();
   context.undoLastMove();
@@ -93,6 +94,39 @@ test("undoing a passed claim returns to the same claim", () => {
   assert.equal(context.undoContinuation, null);
 });
 
+test("passing the last claim on your predecessor's discard offers your draw immediately and remains undoable", () => {
+    for (const discarder of [1, 2, 3]) {
+      const game = {
+        phase: "claim", current: 0, pendingDiscard: { player: discarder, tile: { id: 9 } },
+        wall: [{ id: 10 }], claimQueue: [{ player: 0 }], claimIndex: 0,
+        players: ["You", "Alex", "Jordan", "Morgan"].map((name) => ({ name, hand: [] }))
+      };
+      const context = undoContext(game);
+      Object.assign(context, {
+        possessivePlayerName: () => "Morgan's", tileDescription: () => "tile",
+        recordHumanWin() {}, narrateTurn() {}, scheduleBotTurn() {},
+        drawFor(index) { game.current = index; game.phase = "discard"; }
+      });
+      load(context, "function passClaim(", "/** Applies a selected meld claim");
+      load(context, "function advanceAfterDiscard(", "/** Records a completed hand");
+      load(context, "function beginPlayerDraw(", "/** Draws a tile when the human");
+      context.passClaim();
+      if (discarder !== 3) {
+        assert.equal(game.phase, "undo-pending");
+        context.continueAfterMove();
+        assert.equal(game.current, discarder + 1);
+        assert.equal(game.phase, "discard");
+      } else {
+        assert.equal(game.current, 0);
+        assert.equal(game.phase, "awaiting-draw");
+        assert.equal(game.wall.length, 1);
+        assert.equal(context.undoContinuation, null);
+        context.undoLastMove();
+        assert.equal(context.game.phase, "claim");
+        assert.equal(context.game.pendingDiscard.player, 3);
+      }
+    }
+  });
 test("undoing a declared card win restores the score and hand", () => {
   const game = {
     card: [{}], cardSource: "supplied", current: 0, phase: "discard", winner: null,

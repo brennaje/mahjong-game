@@ -70,6 +70,7 @@ const VARIANTS = {
 };
 const elements = {
   actions: document.querySelector("#actions"),
+  targetSuggestion: document.querySelector("#target-suggestion"),
   americanCardText: document.querySelector("#american-card-text"),
   americanCardStatus: document.querySelector("#american-card-status"),
   americanCardPreview: document.querySelector("#american-card-preview"),
@@ -407,6 +408,7 @@ function newGame(dealer = null, handNumber = 1, variantId = elements.variantSele
   if (activeVariantId === "american") {
     game.phase = "setup";
     game.current = 0;
+    selectAutomaticAmericanTarget();
     render();
     const name = dealer === 0 ? "You are" : `${players[dealer].name} is`;
     announceCharleston(`${name} East. The four walls are ready. Select Deal tiles.`);
@@ -440,6 +442,7 @@ function dealAmericanTiles() {
   if (game.variantId !== "american" || game.phase !== "setup") {
     return;
   }
+  selectAutomaticAmericanTarget();
   for (let round = 0; round < 3; round += 1) {
     for (let offset = 0; offset < game.players.length; offset += 1) {
       const player = game.players[(game.dealer + offset) % game.players.length];
@@ -464,7 +467,7 @@ function dealAmericanTiles() {
   game.players[game.dealer].drawnTileId = null;
   game.players[game.dealer].lastDrawnTileId = null;
   pendingTileAnimations = [];
-  pickAutoTarget();
+  pickAutoTarget(true);
   game.dealAutoTarget = game.autoTarget;
   game.phase = "charleston";
   game.current = 0;
@@ -540,7 +543,7 @@ function passCharleston(blind = false) {
   }
   game.charlestonSelection = [];
   game.charlestonStep += 1;
-  pickAutoTarget();
+  pickAutoTarget(true);
   if (game.charlestonStep === 3) {
     game.phase = "charleston-choice";
   } else if (game.charlestonStep === 6) {
@@ -569,7 +572,8 @@ function announceCharleston(message, playerIndex = 0) {
 
 /** Completes the passing phase and lets East discard the first tile. */
 function finishCharleston() {
-  pickAutoTarget();
+  selectAutomaticAmericanTarget();
+  pickAutoTarget(true);
   game.phase = "discard";
   game.current = game.dealer;
   game.players[game.dealer].drawnTileId = null;
@@ -980,7 +984,7 @@ function renderPatternExamples() {
 
 /** Renders the current game state and stages its tile animations. */
 function render() {
-  if (elements.americanCardTarget.value === AUTO_TARGET) pickAutoTarget();
+  pickAutoTarget();
   ensureReviewDecision();
   const recommendation = getTutorRecommendation();
   renderPlayers();
@@ -1786,7 +1790,10 @@ function renderActions() {
   }
   if (undoState) addAction("Undo", undoLastMove, true);
   if (undoContinuation) {
-    addAction("Continue", continueAfterMove);
+    if (undoContinuation === advanceClaimQueue) {
+      elements.undoStatus.textContent = "Claim passed. Continue to resolve other claims and resume turn order; passing does not itself grant a draw.";
+    }
+    addAction(undoContinuation === advanceClaimQueue ? "Continue after pass" : "Continue", continueAfterMove);
     return;
   }
   if (game.winner !== null) {
@@ -2228,6 +2235,10 @@ function passClaim() {
     );
   }
   if (claim?.player === 0) {
+    if (game.claimIndex === game.claimQueue.length - 1 && game.pendingDiscard?.player === 3) {
+      advanceClaimQueue();
+      return;
+    }
     pauseAfterMove(advanceClaimQueue);
     return;
   }
@@ -2984,10 +2995,57 @@ function bestAmericanPattern(player) {
   return best && best.effort !== Infinity ? best.line.pattern : null;
 }
 
-/** Refreshes your automatic target from your current tiles and the remaining unseen tiles. */
-function pickAutoTarget() {
-  if (game?.variantId !== "american" || game.phase === "setup" || game.winner != null) return;
-  game.autoTarget = bestAmericanPattern(game.players[0]);
+/** Picks freely during passing; during play, offers a better target without changing your focus. */
+function pickAutoTarget(force = false) {
+  if (game?.variantId !== "american" || !game.card || game.phase === "setup" || game.winner != null) return;
+  const best = bestAmericanPattern(game.players[0]);
+  game.targetSuggestion = null;
+  if (force || ["charleston", "charleston-choice"].includes(game.phase) || game.autoTarget === undefined) {
+    game.autoTarget = best;
+    return;
+  }
+  const current = chosenAmericanPattern();
+  if (best === null || best === current) return;
+  const player = game.players[0];
+  const unseen = unseenAmericanCounts(player);
+  const progressFor = (pattern) => game.card.filter((line) => line.pattern === pattern)
+    .map((line) => AmericanCard.progress(line, player.hand, player.melds))
+    .filter(Boolean)
+    .map((progress) => ({ need: progress.need, effort: americanLineEffort(progress, unseen) }))
+    .sort((a, b) => a.effort - b.effort)[0];
+  const proposed = progressFor(best);
+  const previous = progressFor(current);
+  if (previous && proposed.effort >= previous.effort) return;
+  const key = `${current}:${best}:${player.hand.map((tile) => tile.id).sort((a, b) => a - b).join(",")}:${player.melds.flatMap((meld) => meld.tiles.map((tile) => tile.id)).join(",")}`;
+  if (game.declinedTargetSuggestion === key) return;
+  game.targetSuggestion = { pattern: best, need: proposed.need, currentNeed: previous?.need, key };
+}
+
+function answerTargetSuggestion(accept) {
+  const suggestion = game.targetSuggestion;
+  if (!suggestion) return;
+  if (accept) {
+    selectAutomaticAmericanTarget();
+    game.autoTarget = suggestion.pattern;
+    game.declinedTargetSuggestion = null;
+  } else {
+    game.declinedTargetSuggestion = suggestion.key;
+  }
+  game.targetSuggestion = null;
+  render();
+}
+
+/** New hands and completed Charlestons replace any previously pinned target. */
+function selectAutomaticAmericanTarget() {
+  if (game?.variantId !== "american" || !game.card) return;
+  elements.americanCardTarget.value = AUTO_TARGET;
+  if (cardLibrary.target === AUTO_TARGET) return;
+  cardLibrary.target = AUTO_TARGET;
+  try {
+    saveCardLibrary();
+  } catch (error) {
+    elements.americanCardStatus.textContent = `Target choice could not be saved: ${error.message}`;
+  }
 }
 
 /** Says whether the Charleston changed your "Best for my hand" target, or "" when auto is off. */
@@ -4534,6 +4592,24 @@ function renderAmericanCardTarget() {
   text.className = "pattern-text";
   text.textContent = definition;
   elements.americanCardTargetExample.replaceChildren(label, text, ...(example ? [example] : []));
+  elements.targetSuggestion.replaceChildren();
+  elements.targetSuggestion.hidden = true;
+  const suggestion = game.targetSuggestion;
+  if (suggestion && game.winner === null && game.current === 0 &&
+      ["awaiting-draw", "discard", "claim"].includes(game.phase)) {
+    const line = game.card.find((item) => item.pattern === suggestion.pattern);
+    const prompt = document.createElement("p");
+    prompt.setAttribute("role", "status");
+    prompt.textContent = `Better estimated target: ${americanLineName(line)} (${suggestion.need} tiles needed${suggestion.currentNeed === undefined ? "; your current target no longer fits" : `; current target needs ${suggestion.currentNeed}`}). Change your target?`;
+    const change = document.createElement("button");
+    change.textContent = "Change target";
+    change.addEventListener("click", () => answerTargetSuggestion(true));
+    const keep = document.createElement("button");
+    keep.textContent = "Keep my target";
+    keep.addEventListener("click", () => answerTargetSuggestion(false));
+    elements.targetSuggestion.append(prompt, change, keep);
+    elements.targetSuggestion.hidden = false;
+  }
   elements.cardTargetBanner.closest(".table-center")?.classList.add("has-card-target");
   elements.cardTargetBanner.hidden = false;
 }

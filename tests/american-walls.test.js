@@ -79,6 +79,7 @@ test("dealing leaves 99 wall tiles and gives East the extra tile", () => {
       wall: Array.from({ length: 152 }, (_, id) => ({ id }))
     };
     const messages = [];
+    let automaticSelections = 0;
     const context = vm.createContext({
       game,
       pendingTileAnimations: [],
@@ -90,7 +91,8 @@ test("dealing leaves 99 wall tiles and gives East the extra tile", () => {
       },
       render() {},
       announceCharleston: (message) => messages.push(message),
-      pickAutoTarget() {}
+      pickAutoTarget() {},
+      selectAutomaticAmericanTarget() { automaticSelections += 1; }
     });
     implementation("function dealAmericanTiles()", "const CHARLESTON_DIRECTIONS", context);
     context.dealAmericanTiles();
@@ -106,7 +108,9 @@ test("dealing leaves 99 wall tiles and gives East the extra tile", () => {
     assert.equal(game.phase, "charleston");
     assert.equal(game.current, 0);
     assert.match(messages[0], /pass to the right/);
+    assert.equal(automaticSelections, 1);
     context.dealAmericanTiles();
     assert.equal(game.wall.length, 99);
+    assert.equal(automaticSelections, 1);
   }
 });
