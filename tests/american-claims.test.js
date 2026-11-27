@@ -231,11 +231,12 @@ test("any card line wins and only your seat focuses on the chosen target", () =>
   const target = { value: "7" };
   const context = vm.createContext({
     game: { card: [{ pattern: 3 }, { pattern: 7 }], players: [{}, {}], autoTarget: 3 },
+    botTest: null,
     elements: { americanCardTarget: target },
     AUTO_TARGET: "*best*",
     AmericanCard: { winningLines: () => [{ line: { pattern: 3 } }, { line: { pattern: 7 } }] }
   });
-  implementation("function chosenAmericanPattern(", "/** Ranks the active card's lines", context);
+  implementation("function chosenAmericanPattern(", "function rankAmericanLines(", context);
   implementation("function americanFocusFor(", "/** Picks the tiles least useful", context);
   assert.equal(context.cardWinningLines([], { melds: [] }).length, 2);
   assert.equal(context.americanFocusFor(context.game.players[0]), 7);
@@ -365,6 +366,51 @@ test("starting automatic targeting replaces and saves a pinned pattern, with exp
   context.selectAutomaticAmericanTarget();
   assert.equal(target.value, "11");
   assert.equal(library.target, pinned);
+});
+
+test("American claim advice prefers a helpful natural claim over a better-scoring joker claim", () => {
+  const natural = { id: 1, type: "characters", value: 5 };
+  const joker = { id: 2, type: "joker" };
+  const player = { hand: [natural, joker], melds: [] };
+  const discard = { id: 3, type: "characters", value: 5 };
+  const naturalClaim = { type: "pung", tiles: [natural], targetKey: "characters-5" };
+  const jokerClaim = { type: "pung", tiles: [joker], targetKey: "characters-5" };
+  const context = vm.createContext({
+    americanFocusFor: () => null,
+    unseenAmericanCounts: () => new Map(),
+    rankAmericanLines(hand, melds) {
+      const need = !melds.length ? 3 : melds[0].tiles.some((tile) => tile.type === "joker") ? 1 : 2;
+      return [{ need, effort: need }];
+    }
+  });
+  implementation("function americanClaimChoice(", "/** Explains whether a claim moves", context);
+
+  const choice = context.americanClaimChoice(player, [jokerClaim, naturalClaim], discard);
+  assert.equal(choice.bestClaim.option, naturalClaim);
+  assert.equal(choice.bestClaim.after.need, 2);
+  assert.equal(choice.helps, true);
+});
+
+test("American claim advice can recommend a joker when the natural claim does not help", () => {
+  const natural = { id: 1, type: "characters", value: 5 };
+  const joker = { id: 2, type: "joker" };
+  const player = { hand: [natural, joker], melds: [] };
+  const discard = { id: 3, type: "characters", value: 5 };
+  const naturalClaim = { type: "pung", tiles: [natural], targetKey: "characters-5" };
+  const jokerClaim = { type: "pung", tiles: [joker], targetKey: "characters-5" };
+  const context = vm.createContext({
+    americanFocusFor: () => null,
+    unseenAmericanCounts: () => new Map(),
+    rankAmericanLines(hand, melds) {
+      const need = !melds.length ? 3 : melds[0].tiles.some((tile) => tile.type === "joker") ? 2 : 3;
+      return [{ need, effort: need }];
+    }
+  });
+  implementation("function americanClaimChoice(", "/** Explains whether a claim moves", context);
+
+  const choice = context.americanClaimChoice(player, [naturalClaim, jokerClaim], discard);
+  assert.equal(choice.bestClaim.option, jokerClaim);
+  assert.equal(choice.helps, true);
 });
 
 test("one player's pung and chow claims share a prompt unless another claim comes between", () => {

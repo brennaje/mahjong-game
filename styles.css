@@ -57,6 +57,7 @@ button {
 
 .game-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: end;
   gap: 12px;
 }
@@ -69,7 +70,8 @@ button {
   font-weight: 700;
 }
 
-.variant-control select {
+.variant-control select,
+.variant-control input {
   max-width: min(250px, 48vw);
   padding: 9px 30px 9px 10px;
   border: 1px solid #d7b76e;
@@ -77,6 +79,24 @@ button {
   background: #f5efd9;
   color: #20342d;
   font: inherit;
+}
+
+#bot-test-runs {
+  width: 90px;
+  padding-right: 8px;
+}
+
+.variant-control[hidden],
+.bot-test-results[hidden] {
+  display: none;
+}
+
+.bot-test-results {
+  padding: 10px;
+  border: 1px solid #d7b76e;
+  border-radius: 7px;
+  color: #f1dfad;
+  font-size: 0.85rem;
 }
 
 .variant-note {

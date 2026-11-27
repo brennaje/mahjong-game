@@ -105,6 +105,9 @@ const elements = {
   gameReviewMethod: document.querySelector("#game-review-method"),
   newGame: document.querySelector("#new-game"),
   botTest: document.querySelector("#bot-test"),
+  botTestRuns: document.querySelector("#bot-test-runs"),
+  botTestRunsControl: document.querySelector("#bot-test-runs-control"),
+  botTestResults: document.querySelector("#bot-test-results"),
   patternReference: document.querySelector("#pattern-reference"),
   patternDescription: document.querySelector("#pattern-description"),
   showPatternExamples: document.querySelector("#show-pattern-examples"),
@@ -158,7 +161,6 @@ const speechAvailable = typeof window.speechSynthesis !== "undefined" &&
   typeof window.SpeechSynthesisUtterance === "function";
 let voiceEnabled = speechAvailable;
 const BOT_TEST_STEP_MS = 250;
-const BOT_TEST_MAX_HANDS = 20;
 let botTest = null;
 const BOT_MOVE_DELAY_MS = 550;
 const REVIEW_SIMULATION_COUNT = 120;
@@ -3021,14 +3023,39 @@ function unseenAmericanCounts(player) {
 function americanLineEffort(progress, unseen) {
   const left = new Map(unseen);
   let effort = progress.need;
-  for (const group of [...progress.groups].sort((a, b) => a.size - b.size)) {
+  const sets = new Map();
+  let heldJokers = 0;
+  for (const group of progress.groups) {
     if (group.exposed) continue;
+    if (group.size >= 3) {
+      const jokers = group.tiles.filter((tile) => tile.type === "joker").length;
+      heldJokers += jokers;
+      sets.set(group.key, (sets.get(group.key) ?? 0) + group.size - group.tiles.length + jokers);
+      continue;
+    }
     for (let missing = group.size - group.tiles.length; missing > 0; missing -= 1) {
       const naturals = left.get(group.key) ?? 0;
-      const jokers = group.size >= 3 ? left.get("joker") ?? 0 : 0;
+      if (naturals <= 0) return Infinity;
+      effort += 1 / naturals;
+      left.set(group.key, naturals - 1);
+    }
+  }
+  // Held jokers are movable between sets; reserve them for shortages before scoring unseen draws.
+  for (const [key, missing] of sets) {
+    const fill = Math.min(heldJokers, Math.max(0, missing - (left.get(key) ?? 0)));
+    sets.set(key, missing - fill);
+    heldJokers -= fill;
+  }
+  const ordered = [...sets].sort(([a], [b]) => (left.get(a) ?? 0) - (left.get(b) ?? 0));
+  for (const [key, needed] of ordered) {
+    const fill = Math.min(heldJokers, needed);
+    heldJokers -= fill;
+    for (let missing = needed - fill; missing > 0; missing -= 1) {
+      const naturals = left.get(key) ?? 0;
+      const jokers = left.get("joker") ?? 0;
       if (naturals + jokers <= 0) return Infinity;
       effort += 1 / (naturals + jokers);
-      if (naturals > 0) left.set(group.key, naturals - 1);
+      if (naturals > 0) left.set(key, naturals - 1);
       else left.set("joker", jokers - 1);
     }
   }
@@ -3124,13 +3151,17 @@ function cardWinningLines(hand, player) {
   return AmericanCard.winningLines(game.card, hand, player.melds);
 }
 
-/** Ranks the active card's lines by how few tiles a player still needs, focusing on a chosen pattern when it still fits. */
-function rankAmericanLines(hand, melds, pattern = null) {
+/** Ranks card lines by completion effort when unseen counts are supplied, preserving the human's chosen focus. */
+function rankAmericanLines(hand, melds, pattern = null, unseen = null) {
   if (!game.card) return [];
   const ranked = game.card
     .map((line) => AmericanCard.progress(line, hand, melds))
     .filter(Boolean)
-    .sort((a, b) => a.need - b.need || b.line.value - a.line.value);
+    .map((progress) => ({
+      ...progress,
+      effort: unseen ? americanLineEffort(progress, unseen) : progress.need
+    }))
+    .sort((a, b) => a.effort - b.effort || a.need - b.need || b.line.value - a.line.value);
   const focused = pattern === null ? [] : ranked.filter((entry) => entry.line.pattern === pattern);
   return focused.length ? focused : ranked;
 }
@@ -3143,23 +3174,24 @@ function describeAmericanNeeds(progress) {
     .join(", ");
 }
 
-/** The pattern a player aims for: your seat follows the chosen target; bots, and Default, follow their own closest line. */
+/** Only the human follows the chosen target; all bot-controlled seats follow their own closest line. */
 function americanFocusFor(player) {
-  return player === game.players[0] ? activeTargetPattern() : null;
+  return !botTest && player === game.players[0] ? activeTargetPattern() : null;
 }
 
 /** Picks the tiles least useful to the closest card lines for a discard or pass. */
 function recommendAmericanTiles(player, count) {
-  const ranked = rankAmericanLines(player.hand, player.melds, americanFocusFor(player));
+  const ranked = rankAmericanLines(player.hand, player.melds, americanFocusFor(player), unseenAmericanCounts(player));
   if (!ranked.length) return null;
   const best = ranked[0];
-  const close = ranked.filter((entry) => entry.need <= best.need + 2).slice(0, 8);
+  const blocked = !Number.isFinite(best.effort);
+  const close = blocked ? [best] : ranked.filter((entry) => entry.effort <= best.effort + 2).slice(0, 8);
   const candidates = player.hand
     .filter((tile) => tile.type !== "joker")
     .map((tile) => ({
       tile,
       score: close.reduce((sum, entry) =>
-        sum + (entry.keep.has(tile.id) ? (entry === best ? 4 : 1) / (1 + entry.need - best.need) : 0), 0)
+        sum + (entry.keep.has(tile.id) ? (entry === best ? 4 : 1 / (1 + entry.effort - best.effort)) : 0), 0)
     }))
     .sort((a, b) => a.score - b.score ||
       tileKeepValue(a.tile, player.hand) - tileKeepValue(b.tile, player.hand) ||
@@ -3169,12 +3201,13 @@ function recommendAmericanTiles(player, count) {
   const otherNames = new Map();
   for (const entry of ranked) {
     const name = americanLineName(entry.line);
-    if (entry.need > best.need + 2 || otherNames.size >= 2) break;
+    if (!Number.isFinite(entry.effort) || entry.effort > best.effort + 2 || otherNames.size >= 2) break;
     if (name !== bestName && !otherNames.has(name)) otherNames.set(name, entry.need);
   }
   const others = [...otherNames].map(([name, need]) => `${name} (${need} away)`);
   const target = `Target: ${bestName}, ${best.line.value} points${best.line.concealed ? ", concealed — don't expose" : ""}. ` +
-    (best.need === 0 ? "Your hand matches it." : `You need ${best.need} more tile${best.need === 1 ? "" : "s"}: ${describeAmericanNeeds(best)}.`);
+    (best.need === 0 ? "Your hand matches it." : `You need ${best.need} more tile${best.need === 1 ? "" : "s"}: ${describeAmericanNeeds(best)}.`) +
+    (blocked ? " This target cannot be completed from the remaining unseen tiles; consider changing targets or play defensively." : "");
   const unused = tiles.filter((tile) => !best.keep.has(tile.id));
   const reason = !tiles.length ? "" : unused.length === tiles.length
     ? `${tiles.length === 1 ? "It isn't" : "They aren't"} part of that target.`
@@ -3190,16 +3223,25 @@ function recommendAmericanTiles(player, count) {
 /** Finds the claim that brings a player closest to a card line, with the before and after progress. */
 function americanClaimChoice(player, options, discardTile) {
   const focus = americanFocusFor(player);
-  const before = rankAmericanLines(player.hand, player.melds, focus)[0];
-  let bestClaim = null;
+  const unseen = unseenAmericanCounts(player);
+  const before = rankAmericanLines(player.hand, player.melds, focus, unseen)[0];
+  const evaluatedClaims = [];
   for (const option of options) {
     if (option.type === "win") continue;
     const used = new Set(option.tiles.map((tile) => tile.id));
     const melds = [...player.melds, { tiles: [...option.tiles, discardTile], targetKey: option.targetKey }];
-    const after = rankAmericanLines(player.hand.filter((tile) => !used.has(tile.id)), melds, focus)[0];
-    if (after && (!bestClaim || after.need < bestClaim.after.need)) bestClaim = { option, after };
+    const after = rankAmericanLines(player.hand.filter((tile) => !used.has(tile.id)), melds, focus, unseen)[0];
+    if (after) evaluatedClaims.push({ option, after });
   }
-  const helps = Boolean(bestClaim && before && bestClaim.after.need < before.need);
+  const helpfulClaims = evaluatedClaims.filter(({ after }) => before && after.effort < before.effort);
+  const naturalClaims = helpfulClaims.filter(({ option }) =>
+    !option.tiles.some((tile) => tile.type === "joker")
+  );
+  const preferredClaims = naturalClaims.length ? naturalClaims : helpfulClaims;
+  const candidates = preferredClaims.length ? preferredClaims : evaluatedClaims;
+  const bestClaim = candidates.reduce((best, claim) =>
+    !best || claim.after.effort < best.after.effort ? claim : best, null);
+  const helps = Boolean(bestClaim && before && bestClaim.after.effort < before.effort);
   return { before, bestClaim, helps, worth: helps && bestClaim.after.need <= 6 };
 }
 
@@ -3776,31 +3818,53 @@ function scheduleBotTurn(delay = BOT_MOVE_DELAY_MS) {
   }, delay);
 }
 
-/** Starts an American hand in which every seat, including yours, is played by a bot until one wins. */
+/** Starts the requested number of all-bot games, each continuing until a bot wins. */
 function startBotTest() {
   if (elements.variantSelect.value !== "american") return;
+  const runs = elements.botTestRuns.valueAsNumber;
+  elements.botTestRuns.setCustomValidity(
+    Number.isSafeInteger(runs) && runs > 0 ? "" : "Enter a positive whole number of test runs."
+  );
+  if (!elements.botTestRuns.reportValidity()) return;
   if (botTimer !== null) {
     clearTimeout(botTimer);
     botTimer = null;
   }
   if (speechAvailable) window.speechSynthesis.cancel();
-  botTest = { timer: null, hands: 1, idleSteps: 0, signature: "" };
+  botTest = {
+    timer: null, runs, completedRuns: 0, hands: 1, totalHands: 1,
+    wins: PLAYER_NAMES.map(() => 0), idleSteps: 0, signature: ""
+  };
   document.body.classList.add("bot-test-running");
   elements.botTest.textContent = "Stop test";
   elements.botTest.setAttribute("aria-pressed", "true");
+  elements.botTestRuns.disabled = true;
   newGame();
+  renderBotTestResults("Running");
   elements.turnMessage.textContent = "Bot test: all four seats are played by bots.";
   botTest.timer = setTimeout(stepBotTest, BOT_TEST_STEP_MS);
+}
+
+function renderBotTestResults(status) {
+  const wins = botTest.wins.map((count, index) =>
+    `${index === 0 ? "Your seat's bot" : PLAYER_NAMES[index]}: ${count}`
+  ).join(" | ");
+  elements.botTestResults.hidden = false;
+  elements.botTestResults.textContent =
+    `${status} | Runs completed: ${botTest.completedRuns} / ${botTest.runs} | ` +
+    `Total hands played: ${botTest.totalHands}${status === "Running" ? " (including current hand)" : ""} | Wins - ${wins}`;
 }
 
 /** Ends the all-bot test and returns control of your seat. */
 function stopBotTest(message = "") {
   if (!botTest) return;
   clearTimeout(botTest.timer);
+  renderBotTestResults(botTest.completedRuns === botTest.runs ? "Complete" : "Stopped (unfinished run not counted)");
   botTest = null;
   document.body.classList.remove("bot-test-running");
   elements.botTest.textContent = "Bot test";
   elements.botTest.setAttribute("aria-pressed", "false");
+  elements.botTestRuns.disabled = false;
   if (!game) return;
   render();
   if (message) elements.turnMessage.textContent = message;
@@ -3812,16 +3876,20 @@ function stepBotTest() {
   if (!botTest || !game) return;
   botTest.timer = null;
   if (game.winner !== null) {
-    const hands = botTest.hands === 1 ? "1 hand" : `${botTest.hands} hands`;
-    stopBotTest(`Bot test complete: ${game.players[game.winner].name === "You" ? "your seat's bot" : game.players[game.winner].name} won with ${game.winningLine ? americanLineName(game.winningLine) : "a card pattern"} after ${hands}. ${game.scoreSummary ?? ""}`.trim());
-    return;
-  }
-  if (game.phase === "draw") {
-    if (botTest.hands >= BOT_TEST_MAX_HANDS) {
-      stopBotTest(`Bot test stopped: no bot won in ${BOT_TEST_MAX_HANDS} hands.`);
+    botTest.wins[game.winner] += 1;
+    botTest.completedRuns += 1;
+    if (botTest.completedRuns === botTest.runs) {
+      stopBotTest(`Bot test complete: ${botTest.completedRuns} runs in ${botTest.totalHands} hands.`);
       return;
     }
+    botTest.hands = 1;
+    botTest.totalHands += 1;
+    botTest.idleSteps = 0;
+    botTest.signature = "";
+    nextHand();
+  } else if (game.phase === "draw") {
     botTest.hands += 1;
+    botTest.totalHands += 1;
     nextHand();
   } else if (game.phase === "undo-pending") {
     continueAfterMove();
@@ -3847,7 +3915,8 @@ function stepBotTest() {
     stopBotTest(`Bot test stopped: play could not continue in the ${game.phase} phase.`);
     return;
   }
-  elements.turnMessage.textContent = `Bot test · hand ${botTest.hands}: ${elements.turnNarration.textContent || "bots are playing."}`;
+  renderBotTestResults("Running");
+  elements.turnMessage.textContent = `Bot test · run ${botTest.completedRuns + 1}/${botTest.runs} · hand ${botTest.hands}: ${elements.turnNarration.textContent || "bots are playing."}`;
   botTest.timer = setTimeout(stepBotTest, BOT_TEST_STEP_MS);
 }
 
@@ -4128,7 +4197,7 @@ function runBotTurn() {
   }
   const exchange = findAmericanJokerExchanges(game.current).find((candidate) => {
     if (!game.card) return true;
-    const best = rankAmericanLines(player.hand, player.melds, americanFocusFor(player))[0];
+    const best = rankAmericanLines(player.hand, player.melds, americanFocusFor(player), unseenAmericanCounts(player))[0];
     const group = best?.groups.find((item) => item.tiles.some((tile) => tile.id === candidate.tileId));
     return !group || group.size >= 3;
   });
@@ -4514,6 +4583,7 @@ function updateAmericanCardVisibility() {
   elements.americanCardPanel.hidden = !american;
   elements.americanCardPhoneButton.hidden = !american;
   elements.botTest.hidden = !american;
+  elements.botTestRunsControl.hidden = !american;
   if (!american && document.body.classList.contains("phone-card")) setPhonePanel("card", false);
 }
 

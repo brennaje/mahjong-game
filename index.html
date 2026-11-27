@@ -36,10 +36,15 @@
           </select>
         </label>
         <button class="new-game-button" id="new-game" type="button">New hand</button>
-        <button class="new-game-button bot-test-button" id="bot-test" type="button" aria-pressed="false" title="American only: bots play all four seats until one wins" hidden>Bot test</button>
+        <label class="variant-control" id="bot-test-runs-control" for="bot-test-runs" hidden>
+          <span>Test runs</span>
+          <input id="bot-test-runs" type="number" min="1" step="1" value="1" required>
+        </label>
+        <button class="new-game-button bot-test-button" id="bot-test" type="button" aria-pressed="false" title="American only: bots play all four seats for the selected number of runs" hidden>Bot test</button>
       </div>
     </header>
     <p id="layout-status" class="layout-status" role="status" aria-live="polite"></p>
+    <p id="bot-test-results" class="bot-test-results" role="status" aria-live="polite" hidden></p>
     <nav class="phone-tools" aria-label="iPhone display options">
       <button type="button" data-phone-panel="wall" aria-controls="wall-area" aria-expanded="false">Show wall</button>
       <button type="button" data-phone-panel="guides" aria-controls="symbol-reference pattern-reference" aria-expanded="false">Show guides</button>
