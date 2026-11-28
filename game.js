@@ -4415,11 +4415,11 @@ function makeCardExample(line, title, progress = null) {
   groupContainer.style.setProperty("--example-slots", String(line.groups.reduce((sum, group) => sum + group.size, 0) + line.groups.length - 1));
   groupContainer.style.setProperty("--example-max-group", String(Math.max(...line.groups.map((group) => group.size))));
   const tileSet = createTiles("american");
-  const groups = AmericanCard.exampleGroups(line, tileSet);
+  const groups = progress ? progress.groups.map((group) => group.tiles) : AmericanCard.exampleGroups(line, tileSet);
   for (const [groupIndex, tiles] of groups.entries()) {
     const group = line.groups[groupIndex];
     const status = progress?.groups[groupIndex];
-    const have = !status ? group.size : status.exposed ? group.size : status.tiles.length;
+    const have = status ? status.tiles.length : group.size;
     const target = tileSet.find((tile) => tile.type !== "joker" && AmericanCard.key(tile) === group.key);
     if (!target) throw new Error("Cannot display card example: unrecognized tile.");
     const targetName = group.key === "flower-0" ? "flower" : tileDescription(target, "american");
@@ -4429,16 +4429,21 @@ function makeCardExample(line, title, progress = null) {
     groupElement.setAttribute("aria-label", progress
       ? `${group.size} ${targetName} tiles, you have ${have}`
       : `${group.size} ${targetName} tiles`);
-    for (const [tileIndex, tile] of tiles.entries()) {
+    const shown = status ? [...tiles, ...Array(group.size - have).fill(target)] : tiles;
+    for (const [tileIndex, tile] of shown.entries()) {
       const face = makeTile(tile, true, "american");
-      const description = tile.type === "joker"
+      const missing = tileIndex >= have;
+      const tileName = tile.type === "joker"
         ? `Joker substituting for ${group.key === "flower-0" ? "a flower" : targetName}`
         : tileDescription(tile, "american");
+      const description = !status ? tileName : missing
+        ? `Needed: ${targetName}${group.size >= 3 ? " (or Joker)" : ""}`
+        : `${status.exposed ? "Exposed" : "In your hand"}: ${tileName}`;
       face.removeAttribute("data-tile-id");
       face.setAttribute("role", "img");
       face.setAttribute("aria-label", description);
       face.title = description;
-      if (tileIndex >= have) face.classList.add("card-missing");
+      if (missing) face.classList.add("card-missing");
       groupElement.append(face);
     }
     groupContainer.append(groupElement);
@@ -4693,7 +4698,12 @@ function renderAmericanCardTarget() {
       const you = game.players[0];
       const progress = rankAmericanLines(you.hand, you.melds, pattern)[0];
       const closest = progress?.line.pattern === pattern ? progress : null;
-      example = makeCardExample(closest?.line ?? line, "", closest);
+      example = closest
+        ? makeCardExample(closest.line, `Best valid fit: ${14 - closest.need}/14 tiles. Faded = needed.`, closest)
+        : makeCardExample(line, "Your exposed groups do not fit this target. Example only.");
+      if (closest) {
+        example.title = "Every allowed suit/run variation is checked. Each numbered group uses one suit; the card's suit restrictions still apply.";
+      }
     } else if (auto) {
       definition = game.phase === "setup" ? "Best for my hand: picked after the deal"
         : `No card pattern fits your tiles; any ${style} pattern on the card wins`;

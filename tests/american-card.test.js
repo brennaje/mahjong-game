@@ -46,6 +46,19 @@ test("exposures must match an exposed card group; concealed hands cannot have th
   assert.equal(card.matchLine(line(), hand, [{ ...meld, tiles: tiles("characters", 5, 3) }]), null);
 });
 
+test("progress retains the actual tiles of separate, repeated exposed groups", () => {
+  const sample = card.parse("25 | X | regular | F:3 F:3 C1:4 C2:4")[0];
+  const melds = [
+    { targetKey: "flower-0", tiles: [tile("flower", 6), tile("flower", 1), tile("joker")] },
+    { targetKey: "flower-0", tiles: [tile("flower", 4), tile("flower", 7), tile("joker")] }
+  ];
+  const hand = tiles("characters", 1, 2);
+  const progress = card.progress(sample, hand, melds);
+  assert.deepEqual(progress.groups.slice(0, 2).map((group) => group.tiles), melds.map((meld) => meld.tiles));
+  assert.equal(progress.need, 6);
+  assert.deepEqual([...progress.keep], hand.map((tile) => tile.id));
+});
+
 test("claims use allowed groups, including jokers, and exclude concealed hands", () => {
   const hand = [...tiles("characters", 1, 2), tile("joker")];
   const player = { hand, melds: [] };
@@ -109,6 +122,27 @@ test("provided consecutive pattern uses the written groups and supports runs thr
   assert.ok(pattern.lines.some((line) => line.groups.map((group) => group.key).join(" ") ===
     "flower-0 bamboo-5 bamboo-6 bamboo-7 bamboo-8 bamboo-9"));
   assert.deepEqual(pattern.lines[0].groups.map((group) => group.size), [3, 4, 1, 1, 1, 4]);
+});
+
+test("numbered threes in any suit count in every applicable supplied target, regardless of its example suit", () => {
+  const patterns = card.patterns(card.parse(card.defaultCardText));
+  for (const [prefix, matchesForThree] of [
+    ["Odd: NN", 3], ["Odd: FFF", 2], ["369:", 2], ["Consecutive:", 3]
+  ]) {
+    const pattern = patterns.find((pattern) => pattern.name.startsWith(prefix));
+    const example = pattern.lines.find((line) => line.groups.some((group) => group.key === "characters-3"));
+    assert.ok(example, `${prefix} must have a 3 Crak example`);
+    for (const suit of ["characters", "circles", "bamboo"]) {
+      for (const count of [1, 3]) {
+        const hand = tiles(suit, 3, count);
+        const best = pattern.lines.map((line) => card.progress(line, hand, []))
+          .sort((a, b) => a.need - b.need)[0];
+        assert.equal(best.need, 14 - (count === 1 ? 1 : matchesForThree), `${prefix}: ${count} ${suit} threes`);
+        assert.equal(best.keep.size, 14 - best.need);
+        assert.ok(best.groups.some((group) => group.key === `${suit}-3` && group.tiles.includes(hand[0])));
+      }
+    }
+  }
 });
 
 test("named patterns expand suit letters under a suit rule and keep comments out", () => {

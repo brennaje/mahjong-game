@@ -951,6 +951,12 @@ body.bot-test-running #hand {
   border: 0;
 }
 
+#american-card-target-example .card-example-label {
+  margin-bottom: 3px;
+  font-size: 0.68rem;
+  font-weight: 400;
+}
+
 #american-card-target-example .card-example-groups {
   --target-tile-w: clamp(10px, calc((100cqi - 12px) / round(up, var(--example-slots) / 2, 1)), 26px);
   justify-content: center;

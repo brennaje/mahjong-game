@@ -163,7 +163,7 @@ const AmericanCard = (() => {
 
   function exposureAssignments(line, melds, callback) {
     if (line.concealed && melds.length) return null;
-    const used = new Set();
+    const used = new Map();
     function assign(index) {
       if (index === melds.length) return callback(used);
       const meld = melds[index];
@@ -172,7 +172,7 @@ const AmericanCard = (() => {
       for (const [groupIndex, group] of line.groups.entries()) {
         if (used.has(groupIndex) || group.size < 3 ||
             group.size !== meld.tiles.length || group.key !== target) continue;
-        used.add(groupIndex);
+        used.set(groupIndex, meld);
         const result = assign(index + 1);
         if (result) return result;
         used.delete(groupIndex);
@@ -234,7 +234,8 @@ const AmericanCard = (() => {
         }
       }
       const groups = line.groups.map((group, index) => ({
-        index, key: group.key, size: group.size, exposed: used.has(index), tiles: []
+        index, key: group.key, size: group.size, exposed: used.has(index),
+        tiles: [...(used.get(index)?.tiles ?? [])]
       }));
       const open = groups.filter((group) => !group.exposed).sort((a, b) => a.size - b.size);
       for (const group of open) {
